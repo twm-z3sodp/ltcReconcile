@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>居家服務月底對帳</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* 版面：上方兩欄輸入（A 系統／B 紙本），下方摘要列＋可篩選的對帳表；狀態用左側色條與標籤同時表示 */
+:root {
+  --bg: #f3f6f6; --surface: #ffffff; --ink: #17252a; --muted: #5b6b70; --line: #d6dfe0;
+  --accent: #0e6662; --accent-ink: #ffffff; --accent-soft: #e0efee;
+  --good: #2c7a4b; --good-soft: #e3f2e8; --warn: #9a6200; --warn-soft: #fbf0d9;
+  --bad: #b0332c; --bad-soft: #fbe5e3; --info: #3d5a9e; --info-soft: #e5ebf7;
+  --font-body: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1719; --surface: #172327; --ink: #e3ecee; --muted: #93a6ab; --line: #2a3a3f;
+  --accent: #4fb7b0; --accent-ink: #062523; --accent-soft: #163634;
+  --good: #6cc792; --good-soft: #17332a; --warn: #e2b04f; --warn-soft: #372c13;
+  --bad: #f08a83; --bad-soft: #3d1d1b; --info: #9db5f0; --info-soft: #1d2840; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1719; --surface: #172327; --ink: #e3ecee; --muted: #93a6ab; --line: #2a3a3f;
+  --accent: #4fb7b0; --accent-ink: #062523; --accent-soft: #163634;
+  --good: #6cc792; --good-soft: #17332a; --warn: #e2b04f; --warn-soft: #372c13;
+  --bad: #f08a83; --bad-soft: #3d1d1b; --info: #9db5f0; --info-soft: #1d2840; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+h1 { font-size: 1.55rem; font-weight: 700; letter-spacing: .01em; }
+h2 { font-size: 1.05rem; font-weight: 700; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+small, .small { font-size: .82rem; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+header.top p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+.privacy { display: inline-flex; gap: 6px; align-items: center; font-size: .82rem; color: var(--good);
+  background: var(--good-soft); padding: 4px 10px; border-radius: 999px; }
+
+.inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tag { font-family: var(--font-mono); font-weight: 600; font-size: .78rem; width: 24px; height: 24px; border-radius: 6px;
+  display: inline-grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.panel-head .hint { margin-left: auto; font-size: .8rem; color: var(--muted); }
+textarea { width: 100%; min-height: 150px; resize: vertical; font-family: var(--font-mono); font-size: .82rem; line-height: 1.5;
+  padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); white-space: pre; }
+textarea:focus, input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: .88rem; color: var(--muted); }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.parse-status { font-size: .84rem; display: grid; gap: 4px; }
+.parse-status .ok { color: var(--good); }
+.parse-status .err { color: var(--bad); }
+.parse-status ul { margin: 0; padding-left: 1.2em; color: var(--bad); }
+
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 12px; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; padding: 10px 22px; }
+button.ghost { background: transparent; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+details.quick { border-top: 1px solid var(--line); padding-top: 10px; }
+details.quick summary { cursor: pointer; font-weight: 500; color: var(--accent); }
+.quick-grid { display: grid; gap: 10px; margin-top: 10px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+label.f { display: grid; gap: 3px; font-size: .8rem; color: var(--muted); }
+input, select { font: inherit; font-size: .9rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); min-width: 0; }
+.codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.codes button { padding: 6px 4px; font-size: .78rem; line-height: 1.25; text-align: center; position: relative; }
+.codes button b { display: block; font-family: var(--font-mono); font-size: .85rem; }
+.codes button.on { background: var(--accent-soft); border-color: var(--accent); }
+.codes button .n { position: absolute; top: -7px; right: -6px; background: var(--accent); color: var(--accent-ink); border-radius: 999px;
+  font-family: var(--font-mono); font-size: .72rem; min-width: 20px; height: 20px; display: grid; place-items: center; padding: 0 5px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { padding: 6px 12px; font-size: .85rem; cursor: pointer; border-right: 1px solid var(--line); }
+.seg label:last-child { border-right: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg input:checked + span { color: var(--accent); font-weight: 700; }
+
+.run-bar { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; align-items: center; }
+
+.summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 720px) { .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .summary { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.summary .note { grid-column: 1 / -1; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; border-top: 4px solid var(--line); }
+.tile .k { font-size: .8rem; color: var(--muted); letter-spacing: .02em; }
+.tile .v { font-family: var(--font-mono); font-size: 1.7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .d { font-size: .78rem; color: var(--muted); }
+.tile.good { border-top-color: var(--good); } .tile.good .v { color: var(--good); }
+.tile.bad { border-top-color: var(--bad); } .tile.bad .v { color: var(--bad); }
+.tile.warn { border-top-color: var(--warn); } .tile.warn .v { color: var(--warn); }
+.tile.info { border-top-color: var(--info); } .tile.info .v { color: var(--info); font-size: 1.25rem; }
+
+.results { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; display: grid; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.chip { border-radius: 999px; padding: 4px 12px; font-size: .82rem; }
+.chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip .c { font-family: var(--font-mono); margin-left: 4px; opacity: .75; }
+.toolbar .grow { flex: 1 1 160px; }
+.toolbar input[type=search] { width: 100%; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .86rem; min-width: 980px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: .76rem; color: var(--muted); font-weight: 500; letter-spacing: .03em; background: var(--bg); position: sticky; top: 0; }
+td.num { font-family: var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.code { font-family: var(--font-mono); white-space: nowrap; }
+tr.s-bad td:first-child { box-shadow: inset 4px 0 0 var(--bad); }
+tr.s-warn td:first-child { box-shadow: inset 4px 0 0 var(--warn); }
+tr.s-good td:first-child { box-shadow: inset 4px 0 0 var(--good); }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .76rem; font-weight: 500; white-space: nowrap; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.na { background: var(--bg); color: var(--muted); }
+.diff { color: var(--bad); font-weight: 600; }
+.flags { margin: 4px 0 0; padding: 0; list-style: none; font-size: .76rem; color: var(--warn); }
+.empty { padding: 28px; text-align: center; color: var(--muted); }
+.legend { padding: 12px 14px; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); display: grid; gap: 4px; }
+.example-note { font-size: .8rem; background: var(--warn-soft); color: var(--warn); padding: 6px 12px; border-radius: 8px; }
+.toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: .88rem; }
+@media (prefers-reduced-motion: no-preference) { .tile, tr { transition: background-color .15s; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>居家服務月底對帳</h1>
+      <p>把巨安系統的服務紀錄清冊（A）和服務員繳回的紙本紀錄表（B）逐筆比對：日期、個案、服務員、碼別、次數，以及紙本上的案主簽名。</p>
+    </div>
+    <span class="privacy">資料只在這個瀏覽器裡處理，不會上傳</span>
+  </header>
+
+  <div class="example-note" id="exampleNote">目前顯示的是範例資料（虛構姓名），按「清空」後貼上或上傳你的檔案。</div>
+
+  <section class="inputs">
+    <div class="panel" id="panelA">
+      <div class="panel-head"><span class="tag">A</span><h2>巨安系統服務紀錄清冊</h2><span class="hint">核銷作業 › 服務紀錄清冊 匯出</span></div>
+      <div class="drop" id="dropA">
+        <input type="file" id="fileA" accept=".xlsx,.xls,.csv">
+        <span>或把 Excel／CSV 拖曳到這裡</span>
+      </div>
+      <label class="small muted" for="textA">或貼上表格（需含表頭：日期、個案姓名、服務員、服務項目、次數）</label>
+      <textarea id="textA" spellcheck="false"></textarea>
+      <div class="parse-status" id="statusA"></div>
+    </div>
+
+    <div class="panel" id="panelB">
+      <div class="panel-head"><span class="tag">B</span><h2>服務員繳回紙本紀錄表</h2><span class="hint">112.02 修 官方表單</span></div>
+      <div class="drop" id="dropB">
+        <input type="file" id="fileB" accept=".xlsx,.xls,.csv">
+        <span>或把 Excel／CSV 拖曳到這裡</span>
+      </div>
+      <label class="small muted" for="textB">或貼上表格（表頭多一欄「簽名」：已簽／未簽／家屬代簽）</label>
+      <textarea id="textB" spellcheck="false"></textarea>
+      <div class="parse-status" id="statusB"></div>
+
+      <details class="quick" id="quick">
+        <summary>點選登錄紙本（免打字）</summary>
+        <div class="quick-grid">
+          <div class="fields">
+            <label class="f" for="qDate">服務日期<input type="date" id="qDate"></label>
+            <label class="f" for="qClient">個案姓名<input id="qClient" list="dlClient" autocomplete="off"></label>
+            <label class="f" for="qWorker">服務員<input id="qWorker" list="dlWorker" autocomplete="off"></label>
+          </div>
+          <datalist id="dlClient"></datalist><datalist id="dlWorker"></datalist>
+          <div class="small muted">點碼別加 1 次，按住 Shift 點一下減 1 次</div>
+          <div class="codes" id="qCodes"></div>
+          <div class="row-actions">
+            <div class="seg" role="radiogroup" aria-label="案主簽名">
+              <label><input type="radio" name="qSig" id="qSig1" value="已簽" checked><span>已簽</span></label>
+              <label><input type="radio" name="qSig" id="qSig2" value="家屬代簽"><span>家屬代簽</span></label>
+              <label><input type="radio" name="qSig" id="qSig3" value="未簽"><span>未簽</span></label>
+            </div>
+            <button id="qAdd" class="primary" type="button">加入紙本清單</button>
+            <button id="qReset" class="ghost" type="button">清除選擇</button>
+          </div>
+          <div class="small" id="qMsg"></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <div class="run-bar">
+    <button class="primary" id="run" type="button">開始對帳</button>
+    <button id="loadExample" type="button">載入範例</button>
+    <button id="clearAll" class="ghost" type="button">清空</button>
+  </div>
+
+  <section id="out" hidden>
+    <div class="summary" id="summary"></div>
+  </section>
+
+  <section class="results" id="resultsBox" hidden>
+    <div class="toolbar">
+      <div id="chips" class="row-actions"></div>
+      <div class="grow"><input type="search" id="search" placeholder="搜尋個案或服務員" aria-label="搜尋個案或服務員"></div>
+      <button id="copy" type="button">複製結果（貼到 Excel）</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>判定</th><th>日期</th><th>個案</th><th>服務員</th><th>系統 A</th><th>紙本 B</th><th>次數 A／B</th><th>案主簽名</th><th>金額差（估）</th><th>處理建議</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <div>比對單位是「日期＋個案＋服務員＋碼別」，同一單位的多列先加總次數再比較。系統有、紙本無的列沒有紙本可看，簽名欄顯示「無紙本」，不算簽名異常。</div>
+      <div>金額差＝系統申報 − 紙本支持，用 113.05 版給付價估算：正數是系統多報（核銷會被追扣），負數是系統少報（該收沒收）。僅供排序參考，不含自付額。</div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="reconcile-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  const STATUS = {
+    match: ['一致', 'good'], count: ['次數不符', 'bad'], a_only: ['系統有・紙本無', 'bad'],
+    b_only: ['紙本有・系統無', 'warn'], code_mismatch: ['碼別不符', 'bad'],
+    client_mismatch: ['個案姓名不符', 'warn'], worker_mismatch: ['服務員不符', 'warn'],
+  };
+  const SIG = {
+    signed: ['已簽', 'good'], proxy: ['家屬代簽', 'good'], unsigned: ['未簽', 'bad'],
+    mixed: ['部分未簽', 'bad'], unknown: ['未提供簽名欄', 'na'], na: ['無紙本', 'na'],
+  };
+
+  const EX_A = [
+    '日期\t個案姓名\t服務員\t服務項目\t次數',
+    '2026/10/17\t陳玉英\t陳玉年\tBA07\t1',
+    '2026/10/17\t陳玉英\t陳玉年\tBA04\t1',
+    '2026/10/20\t黃有成\t林秋萍\tBA01\t1',
+    '2026/10/21\t王大明\t李小華\tBA01\t2',
+    '2026/10/22\t王大明\t李小華\tBA02\t1',
+    '2026/10/23\t張美麗\t李小華\tBA07\t1',
+    '2026/10/24\t陳阿土\t林秋萍\tBA15\t1',
+    '2026/10/25\t吳秀英\t李小華\tBA20\t3',
+  ].join('\n');
+  const EX_B = [
+    '日期\t個案姓名\t服務員\t服務項目\t次數\t簽名',
+    '2026/10/17\t陳玉英\t陳玉年\tBA07\t1\t已簽名 (陳玉英)',
+    '2026/10/20\t黃有成\t林秋萍\tBA01\t1\t未簽名',
+    '2026/10/21\t王大明\t李小華\tBA01\t1\t已簽',
+    '2026/10/22\t王大明\t李小華\tBA02\t1\t已簽',
+    '2026/10/22\t王大明\t李小華\tBA03\t1\t已簽',
+    '2026/10/23\t張美麗\t李小華\tBA04\t1\t已簽',
+    '2026/10/24\t陳阿士\t林秋萍\tBA15\t1\t已簽',
+    '2026/10/25\t吳秀英\t黃小美\tBA20\t3\t家屬代簽 (女兒)',
+  ].join('\n');
+
+  // 每一邊可以是上傳的檔案（2D 陣列）或貼上的文字；以最後一次動作為準
+  const src = { A: { rows: null, name: '' }, B: { rows: null, name: '' } };
+  const parsed = { A: null, B: null };
+  let result = null; let filter = 'attention'; let isExample = false;
+
+  function currentRows(side) {
+    const s = src[side];
+    if (s.rows) return s.rows;
+    return LTC.textToRows($('text' + side).value);
+  }
+
+  function parseSide(side) {
+    const rows = currentRows(side);
+    parsed[side] = rows.length ? LTC.parseRecords(rows, side) : null;
+    renderStatus(side);
+    if (side === 'A') fillDatalists();
+  }
+
+  function renderStatus(side) {
+    const p = parsed[side]; const el = $('status' + side);
+    if (!p) { el.innerHTML = '<span class="muted">尚未載入資料</span>'; return; }
+    const from = src[side].rows ? '檔案「' + esc(src[side].name) + '」' : '貼上內容';
+    let h = '';
+    if (p.records.length) h += '<span class="ok">' + from + '：讀到 ' + p.records.length + ' 筆服務項目</span>';
+    if (p.columns) {
+      const miss = [];
+      if (p.columns.worker == null) miss.push('服務員（比對時不看服務員）');
+      if (p.columns.count == null) miss.push('次數（每列以 1 計）');
+      if (side === 'B' && !p.hasSig) miss.push('簽名（不檢查簽名）');
+      if (miss.length) h += '<span class="muted">沒有欄位：' + miss.join('、') + '</span>';
+    }
+    if (p.problems.length) {
+      h += '<span class="err">' + p.problems.length + ' 列無法使用，未納入比對：</span><ul>' +
+        p.problems.slice(0, 8).map(x => '<li>' + (x.row ? '第 ' + x.row + ' 列：' : '') + esc(x.msg) + '</li>').join('') +
+        (p.problems.length > 8 ? '<li>…另有 ' + (p.problems.length - 8) + ' 列</li>' : '') + '</ul>';
+    }
+    el.innerHTML = h;
+  }
+
+  function readFile(side, file) {
+    if (!file) return;
+    const reader = new FileReader();
+    const isCsv = /\.csv$/i.test(file.name);
+    reader.onload = e => {
+      try {
+        let rows;
+        if (isCsv) {
+          rows = LTC.textToRows(new TextDecoder(detectCsvEncoding(e.target.result)).decode(e.target.result));
+        } else {
+          if (typeof XLSX === 'undefined') throw new Error('Excel 讀取元件沒有載入，請改用貼上或 CSV');
+          const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+          rows = pickSheet(wb);
+        }
+        src[side] = { rows, name: file.name };
+        $('text' + side).value = rows.slice(0, 400).map(r => r.map(cellText).join('\t')).join('\n') +
+          (rows.length > 400 ? '\n…（共 ' + rows.length + ' 列，僅顯示前 400 列，比對使用全部）' : '');
+        clearExample();
+        parseSide(side);
+      } catch (err) {
+        $('status' + side).innerHTML = '<span class="err">讀檔失敗：' + esc(err.message) + '</span>';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // 巨安匯出的 CSV 常是 Big5；UTF-8 解碼出現亂碼時改用 Big5
+  function detectCsvEncoding(buf) {
+    try { new TextDecoder('utf-8', { fatal: true }).decode(buf); return 'utf-8'; } catch (e) { return 'big5'; }
+  }
+
+  function cellText(c) {
+    if (c instanceof Date) return (LTC.normDate(c) || '').replace(/-/g, '/');
+    return c == null ? '' : String(c).replace(/[\t\n]/g, ' ');
+  }
+
+  // 多個工作表時，取第一個找得到表頭的
+  function pickSheet(wb) {
+    for (const name of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
+      if (LTC.parseRecords(rows, 'x').columns) return rows;
+    }
+    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+  }
+
+  ['A', 'B'].forEach(side => {
+    $('file' + side).addEventListener('change', e => readFile(side, e.target.files[0]));
+    const drop = $('drop' + side);
+    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); readFile(side, e.dataTransfer.files[0]); });
+    let t;
+    $('text' + side).addEventListener('input', () => {
+      src[side] = { rows: null, name: '' }; $('file' + side).value = '';
+      clearExample();
+      clearTimeout(t); t = setTimeout(() => parseSide(side), 250);
+    });
+  });
+
+  /* ---------- 點選登錄 ---------- */
+  const QUICK_CODES = ['BA01', 'BA02', 'BA03', 'BA04', 'BA05', 'BA07', 'BA08', 'BA10', 'BA11', 'BA12', 'BA13', 'BA14',
+    'BA15', 'BA16', 'BA17a', 'BA17b', 'BA17c', 'BA17d1', 'BA17d2', 'BA18', 'BA20', 'BA22', 'BA23', 'BA24'];
+  const qCount = {};
+  function renderCodes() {
+    $('qCodes').innerHTML = QUICK_CODES.map(c => {
+      const n = qCount[c] || 0;
+      return '<button type="button" data-code="' + c + '" class="' + (n ? 'on' : '') + '"><b>' + c + '</b>' +
+        esc(LTC.codeName(c).replace(/（.*）/, '')) + (n ? '<span class="n">' + n + '</span>' : '') + '</button>';
+    }).join('');
+  }
+  $('qCodes').addEventListener('click', e => {
+    const b = e.target.closest('button[data-code]'); if (!b) return;
+    const c = b.dataset.code;
+    qCount[c] = Math.max(0, (qCount[c] || 0) + (e.shiftKey ? -1 : 1));
+    if (!qCount[c]) delete qCount[c];
+    renderCodes();
+  });
+  $('qReset').addEventListener('click', () => { Object.keys(qCount).forEach(k => delete qCount[k]); renderCodes(); $('qMsg').textContent = ''; });
+  $('qAdd').addEventListener('click', () => {
+    const d = $('qDate').value, cl = $('qClient').value.trim(), wk = $('qWorker').value.trim();
+    const codes = Object.keys(qCount);
+    const miss = [];
+    if (!d) miss.push('日期'); if (!cl) miss.push('個案'); if (!wk) miss.push('服務員'); if (!codes.length) miss.push('至少一個碼別');
+    if (miss.length) { $('qMsg').innerHTML = '<span style="color:var(--bad)">請先填：' + miss.join('、') + '</span>'; return; }
+    const sig = document.querySelector('input[name=qSig]:checked').value;
+    const ta = $('textB');
+    const header = '日期\t個案姓名\t服務員\t服務項目\t次數\t簽名';
+    let txt = ta.value.trim();
+    if (src.B.rows || !txt || !LTC.parseRecords(LTC.textToRows(txt), 'B').columns) txt = header;
+    const lines = codes.map(c => [d.replace(/-/g, '/'), cl, wk, c, qCount[c], sig].join('\t'));
+    ta.value = txt + '\n' + lines.join('\n');
+    src.B = { rows: null, name: '' };
+    clearExample();
+    parseSide('B');
+    $('qMsg').innerHTML = '<span style="color:var(--good)">已加入 ' + cl + ' ' + d + ' 共 ' + codes.length + ' 個碼別</span>';
+    Object.keys(qCount).forEach(k => delete qCount[k]); renderCodes();
+  });
+  function fillDatalists() {
+    const p = parsed.A; const cs = new Set(), ws = new Set();
+    if (p) p.records.forEach(r => { cs.add(r.client); if (r.worker) ws.add(r.worker); });
+    $('dlClient').innerHTML = [...cs].map(x => '<option value="' + esc(x) + '">').join('');
+    $('dlWorker').innerHTML = [...ws].map(x => '<option value="' + esc(x) + '">').join('');
+  }
+
+  /* ---------- 對帳 ---------- */
+  function run() {
+    parseSide('A'); parseSide('B');
+    const a = parsed.A, b = parsed.B;
+    if (!a || !a.records.length || !b || !b.records.length) {
+      $('out').hidden = false; $('resultsBox').hidden = true;
+      $('summary').innerHTML = '<div class="tile bad"><span class="k">無法對帳</span><span class="d">' +
+        (!a || !a.records.length ? 'A 系統清冊沒有可用資料。' : '') + (!b || !b.records.length ? 'B 紙本紀錄沒有可用資料。' : '') + '</span></div>';
+      return;
+    }
+    const ignoreWorker = a.columns.worker == null || b.columns.worker == null;
+    result = LTC.reconcile(a.records, b.records, { ignoreWorker });
+    result.problemCount = a.problems.length + b.problems.length;
+    renderSummary(); renderChips(); renderTable();
+  }
+
+  const money = n => (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('zh-TW');
+
+  function renderSummary() {
+    const s = result.summary;
+    $('out').hidden = false; $('resultsBox').hidden = false;
+    $('summary').innerHTML = [
+      tile('需處理', s.attention, s.attention ? 'bad' : 'good', '共 ' + s.total + ' 個比對單位' + (s.both ? '，其中 ' + s.both + ' 筆項目與簽名都有問題' : '')),
+      tile('項目／次數異常', s.itemIssue, s.itemIssue ? 'bad' : 'good', '碼別、次數、個案或服務員對不上'),
+      tile('紙本未簽名', s.sigIssue, s.sigIssue ? 'warn' : 'good', '只計有紙本的列'),
+      tile('完全一致', s.ok, 'good', s.total ? '佔 ' + Math.round(s.ok / s.total * 100) + '%' : ''),
+      tile('系統多報（估）', money(s.overClaim), 'info', '核銷可能被追扣'),
+      tile('系統少報（估）', money(s.underClaim), 'info', s.amountUnknown ? s.amountUnknown + ' 筆碼別無價格未計' : '該申報未申報'),
+    ].join('') + (result.problemCount ? '<div class="note example-note">有 ' + result.problemCount + ' 列格式有誤、未納入比對，請看上方 A／B 欄下的說明修正後重新對帳。</div>' : '');
+  }
+  function tile(k, v, cls, d) {
+    return '<div class="tile ' + cls + '"><span class="k">' + k + '</span><span class="v">' + v + '</span><span class="d">' + esc(d) + '</span></div>';
+  }
+
+  function inFilter(r) {
+    if (filter === 'all') return true;
+    if (filter === 'attention') return !r.ok;
+    if (filter === 'sig') return r.sigIssue;
+    if (filter === 'ok') return r.ok;
+    return r.status === filter;
+  }
+  function renderChips() {
+    const rows = result.rows;
+    const defs = [['attention', '需處理'], ['all', '全部'], ['sig', '未簽名'], ['ok', '完全一致']]
+      .concat(Object.keys(STATUS).filter(k => k !== 'match').map(k => [k, STATUS[k][0]]));
+    $('chips').innerHTML = defs.map(([k, label]) => {
+      const n = rows.filter(r => { const f = filter; filter = k; const x = inFilter(r); filter = f; return x; }).length;
+      if (!n && !['attention', 'all'].includes(k)) return '';
+      return '<button type="button" class="chip' + (filter === k ? ' on' : '') + '" data-f="' + k + '">' + label + '<span class="c">' + n + '</span></button>';
+    }).join('');
+  }
+  $('chips').addEventListener('click', e => {
+    const b = e.target.closest('button[data-f]'); if (!b) return;
+    filter = b.dataset.f; renderChips(); renderTable();
+  });
+  $('search').addEventListener('input', renderTable);
+
+  function codeCell(code) {
+    if (!code) return '<span class="muted">—</span>';
+    const n = LTC.codeName(code);
+    return '<span class="mono">' + esc(code) + '</span>' + (n ? '<br><span class="small muted">' + esc(n) + '</span>' : '');
+  }
+  function renderTable() {
+    const q = $('search').value.trim();
+    const rows = result.rows.filter(inFilter).filter(r => !q ||
+      [r.client, r.bClient, r.worker, r.bWorker].some(x => x && x.includes(q)));
+    if (!rows.length) { $('tbody').innerHTML = '<tr><td colspan="10" class="empty">' + (filter === 'attention' ? '沒有需要處理的項目，系統與紙本完全一致。' : '這個篩選沒有資料。') + '</td></tr>'; return; }
+    $('tbody').innerHTML = rows.map(r => {
+      const st = STATUS[r.status]; const sg = SIG[r.sig];
+      const cls = !r.itemOk ? (st[1] === 'bad' ? 's-bad' : 's-warn') : (r.sigIssue ? 's-warn' : 's-good');
+      const client = r.bClient && r.bClient !== r.client ? esc(r.client) + '<br><span class="small diff">紙本：' + esc(r.bClient) + '</span>' : esc(r.client);
+      const worker = r.bWorker && r.bWorker !== r.worker ? esc(r.worker) + '<br><span class="small diff">紙本：' + esc(r.bWorker) + '</span>' : esc(r.worker || '—');
+      const cnt = r.aCount === r.bCount ? r.aCount + '／' + r.bCount : '<span class="diff">' + r.aCount + '／' + r.bCount + '</span>';
+      const amt = r.itemOk ? '<span class="muted">—</span>' : r.amount == null ? '<span class="muted">無價格</span>' : (r.amount === 0 ? '$0' : money(r.amount));
+      const src = [r.aRows.length ? 'A 列 ' + r.aRows.join('、') : '', r.bRows.length ? 'B 列 ' + r.bRows.join('、') : ''].filter(Boolean).join('；');
+      return '<tr class="' + cls + '">' +
+        '<td><span class="pill ' + st[1] + '">' + st[0] + '</span><br><span class="small muted">' + src + '</span></td>' +
+        '<td class="mono">' + r.date.replace(/-/g, '/') + '</td>' +
+        '<td>' + client + '</td><td>' + worker + '</td>' +
+        '<td>' + codeCell(r.aCode) + '</td><td>' + codeCell(r.bCode) + '</td>' +
+        '<td class="num">' + cnt + '</td>' +
+        '<td><span class="pill ' + sg[1] + '">' + sg[0] + '</span>' + (r.sigNote ? '<br><span class="small muted">' + esc(r.sigNote) + '</span>' : '') + '</td>' +
+        '<td class="num">' + amt + '</td>' +
+        '<td>' + esc(r.advice) + (r.flags.length ? '<ul class="flags">' + r.flags.map(f => '<li>' + esc(f) + '</li>').join('') + '</ul>' : '') + '</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  $('copy').addEventListener('click', () => {
+    if (!result) return;
+    const head = ['判定', '日期', '個案(系統)', '個案(紙本)', '服務員(系統)', '服務員(紙本)', '碼別(系統)', '碼別(紙本)', '次數(系統)', '次數(紙本)', '案主簽名', '金額差(估)', '處理建議', '附註', '來源列'];
+    const lines = [head.join('\t')].concat(result.rows.filter(inFilter).map(r => [
+      STATUS[r.status][0], r.date.replace(/-/g, '/'), r.client, r.bClient || '', r.worker, r.bWorker || '',
+      r.aCode || '', r.bCode || '', r.aCount, r.bCount, SIG[r.sig][0] + (r.sigNote ? '(' + r.sigNote + ')' : ''),
+      r.itemOk || r.amount == null ? '' : r.amount, r.advice, r.flags.join('；'),
+      [r.aRows.length ? 'A' + r.aRows.join(',') : '', r.bRows.length ? 'B' + r.bRows.join(',') : ''].filter(Boolean).join(' '),
+    ].map(x => String(x).replace(/[\t\n]/g, ' ')).join('\t')));
+    const text = lines.join('\n');
+    const done = () => toast('已複製 ' + (lines.length - 1) + ' 列，到 Excel 貼上即可');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+    } else fallbackCopy(text, done);
+  });
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* 不支援 */ }
+    ta.remove();
+    if (ok) done(); else toast('瀏覽器不允許自動複製，請選取表格後手動複製');
+  }
+  function toast(msg) {
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2600);
+  }
+
+  function clearExample() { if (isExample) { isExample = false; $('exampleNote').hidden = true; } }
+  function loadExample() {
+    $('textA').value = EX_A; $('textB').value = EX_B;
+    src.A = { rows: null, name: '' }; src.B = { rows: null, name: '' };
+    isExample = true; $('exampleNote').hidden = false;
+    $('qDate').value = '2026-10-26';
+    filter = 'attention'; run();
+  }
+  $('loadExample').addEventListener('click', loadExample);
+  $('clearAll').addEventListener('click', () => {
+    ['A', 'B'].forEach(s => { $('text' + s).value = ''; $('file' + s).value = ''; src[s] = { rows: null, name: '' }; parsed[s] = null; renderStatus(s); });
+    clearExample(); result = null; $('out').hidden = true; $('resultsBox').hidden = true; fillDatalists();
+  });
+  $('run').addEventListener('click', () => { filter = 'attention'; run(); });
+
+  renderCodes();
+  loadExample();
+})();
+</script>
+
+</body>
+</html>
