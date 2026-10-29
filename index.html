@@ -348,7 +348,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       if (miss.length) h += '<span class="muted">沒有欄位：' + miss.join('、') + '</span>';
     }
     const sk = Object.entries(p.skipped || {});
-    if (sk.length) h += '<span class="muted">已略過非居家照顧組合（不在紙本表上）：' + sk.map(([c, n]) => esc(c) + ' ' + n + ' 列').join('、') + '</span>';
+    if (sk.length) h += '<span class="muted">已略過不在服務紀錄單上的碼：' + sk.map(([c, n]) => esc(c) + ' ' + n + ' 列').join('、') + '</span>';
     if (p.problems.length) {
       h += '<span class="err">' + p.problems.length + ' 列無法使用，未納入比對：</span><ul>' +
         p.problems.slice(0, 8).map(x => '<li>' + (x.row ? '第 ' + x.row + ' 列：' : '') + esc(x.msg) + '</li>').join('') +
@@ -435,7 +435,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     }).join('');
     const sig = form.cols.map((c, j) => '<td><button type="button" class="sigbtn s' + SIG_CYCLE.indexOf(c.sig) + '" data-sig="' + j + '">' + c.sig + '</button></td>').join('');
     const body = LTC.FORM_ROWS.map(code => {
-      const name = code === 'MISS' ? '服務未遇' : (LTC.codeName(code) || '').replace(/（.*）/, '');
+      const name = code === 'MISS' ? '服務未遇' : (LTC.codeName(code) || '').replace(/（.*）/, '') + (/^(GA|SC)/.test(code) ? '（另張紀錄單）' : '');
       const sum = form.cols.reduce((s, _, j) => s + cellN(code, j), 0);
       const t = form.totals[code]; const bad = t !== undefined && t !== '' && Number(t) !== sum;
       return '<tr><th scope="row">' + (code === 'MISS' ? '' : '<span class="mono">' + code + '</span> ') + esc(name) + '</th>' +

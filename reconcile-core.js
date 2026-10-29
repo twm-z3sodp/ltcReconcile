@@ -23,6 +23,8 @@
     BA17d1: ['血糖機驗血糖', 50], BA17d2: ['甘油球通便', 50], BA17e: ['BA17e（以最新公告為準）', null],
     BA18: ['安全看視', 200], BA20: ['陪伴服務', 175], BA22: ['巡視服務', 130],
     BA23: ['協助洗頭', 200], BA24: ['協助排泄', 220],
+    // 喘息、短照：名稱取自巨安清冊「服務項目」類別，單價取自清冊政府單價
+    GA09: ['喘息服務', 770], SC09: ['短照服務', 770],
     MISS: ['服務未遇', 0],
   };
 
@@ -41,9 +43,9 @@
   // BA4 / ba04 / ＢＡ０７ / BA17D1 → BA04 / BA07 / BA17d1；無法辨識回傳 null
   function normCode(s) {
     const t = toHalf(s).replace(/\s+/g, '').toUpperCase();
-    const m = t.match(/^BA0*(\d{1,2})([A-E]\d?)?$/);
+    const m = t.match(/^(BA|GA|SC)0*(\d{1,2})([A-E]\d?)?$/);
     if (!m) return null;
-    return 'BA' + m[1].padStart(2, '0') + (m[2] ? m[2].toLowerCase() : '');
+    return m[1] + m[2].padStart(2, '0') + (m[3] ? m[3].toLowerCase() : '');
   }
 
   function pad2(n) { return String(n).padStart(2, '0'); }
@@ -180,7 +182,7 @@
   // 一格可能寫多個碼：「BA01×1、BA07*2」
   function splitCodes(cell) {
     const t = toHalf(cell);
-    const re = /BA\s*0*\d{1,2}(?:[A-E]\d?)?(?![A-Z0-9])\s*(?:[x×X*＊]\s*(\d+(?:\.\d+)?))?/gi;
+    const re = /(?:BA|GA|SC)\s*0*\d{1,2}(?:[A-E]\d?)?(?![A-Z0-9])\s*(?:[x×X*＊]\s*(\d+(?:\.\d+)?))?/gi;
     const out = []; let m;
     while ((m = re.exec(t))) {
       const raw = m[0].replace(/\s*[x×X*＊]\s*\d+(\.\d+)?$/, '');
@@ -235,8 +237,8 @@
       // 紙本表單最下列「服務未遇」：該次到府但未遇案主，以 MISS 表示
       const missed = /未遇/.test(toHalf(codeCell));
       const codes = missed ? [{ code: 'MISS', raw: '服務未遇', count: 1 }] : splitCodes(codeCell);
-      // GA（喘息）、SC（短照）、AA（加成）等非 BA 碼不在居家紙本表上：略過並計數，不當成錯誤
-      const other = toHalf(codeCell).trim().toUpperCase().match(/^(GA|SC|AA|CA|CB|CC|CD|DA|EA|EB|EC|ED|EE|EF|EG|EH|FA)\d{2}/);
+      // AA（照顧加成）、專業服務、交通、輔具等不在服務紀錄單上的碼：略過並計數，不當成錯誤
+      const other = toHalf(codeCell).trim().toUpperCase().match(/^(AA|CA|CB|CC|CD|DA|EA|EB|EC|ED|EE|EF|EG|EH|FA)\d{2}/);
       if (!codes.length && other) { const k = toHalf(codeCell).trim().toUpperCase(); skipped[k] = (skipped[k] || 0) + 1; return; }
       if (!codes.length) errs.push('服務項目無法辨識：「' + (String(codeCell).trim() || '空白') + '」');
       if (errs.length) { problems.push({ src, row: rowNo, msg: errs.join('；'), raw: cells.join(' | ') }); return; }
@@ -499,7 +501,7 @@
 
   // 表單上由上到下的列
   const FORM_ROWS = ['BA01', 'BA02', 'BA03', 'BA04', 'BA05', 'BA07', 'BA08', 'BA10', 'BA11', 'BA12', 'BA13', 'BA14',
-    'BA15', 'BA16', 'BA17', 'BA18', 'BA20', 'BA22', 'BA23', 'BA24', 'MISS'];
+    'BA15', 'BA16', 'BA17', 'BA18', 'BA20', 'BA22', 'BA23', 'BA24', 'MISS', 'GA09', 'SC09'];
   const TALLY = ['', '一', '丅', '下', '止', '正'];
 
   // 正字記號：5 以內用一筆一畫的樣子，超過 5 用「正」組合
