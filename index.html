@@ -96,6 +96,15 @@ table.sheet { min-width: 0; width: max-content; font-size: .8rem; border-collaps
 .sheet input.ptot { width: 2.8em; padding: 2px; font-size: .78rem; text-align: center; }
 .sheet input.ptot.bad { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
 .err-text { color: var(--bad); }
+details.keybox { border-top: 1px solid var(--line); padding-top: 8px; }
+details.keybox summary { cursor: pointer; font-size: .85rem; color: var(--accent); }
+.thumbs button { position: relative; }
+.thumbs button .st { position: absolute; right: 2px; bottom: 2px; font-size: .7rem; line-height: 1; padding: 2px 4px; border-radius: 4px; background: var(--surface); color: var(--ink); }
+.thumbs button .st.added { background: var(--good); color: #fff; }
+.thumbs button .st.review { background: var(--warn); color: #fff; }
+.thumbs button .st.error { background: var(--bad); color: #fff; }
+.sheet button.tc.unsure, .sheet input.ptot.unsure, .sheet button.sigbtn.unsure { box-shadow: inset 0 0 0 2px var(--bad); }
+.sheet .wk.bad { color: var(--bad); font-weight: 700; }
 .warn-text { color: var(--warn); }
 .ok-text { color: var(--good); }
 
@@ -167,9 +176,9 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
   <header class="top">
     <div>
       <h1>居家服務月底對帳</h1>
-      <p>把巨安系統的服務紀錄清冊（A）和服務員繳回的紙本紀錄表（B）逐筆比對：日期、個案、服務員、碼別、次數，以及紙本上的案主簽名。</p>
+      <p>把巨安系統的服務紀錄清冊（A）和服務員繳回的紙本紀錄表（B）逐筆比對：日期、個案、服務員、碼別、次數，以及紙本上的案主簽名。紙本拍照後可自動辨識，網站會用紙本的合計欄和星期列驗算辨識結果。</p>
     </div>
-    <span class="privacy">資料只在這個瀏覽器裡處理，不會上傳</span>
+    <span class="privacy">清冊與比對結果只在這個瀏覽器裡處理；只有按「自動辨識」時照片才會傳給 Gemini</span>
   </header>
 
   <div class="example-note" id="exampleNote">目前顯示的是範例資料（虛構姓名），按「清空」後貼上或上傳你的檔案。</div>
@@ -194,8 +203,15 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
           <input type="file" id="photoCam" accept="image/*" capture="environment" class="visually-hidden">
           <label class="btn" for="photoPick">從電腦／相簿選照片</label>
           <input type="file" id="photoPick" accept="image/*" multiple class="visually-hidden">
-          <span class="small muted" id="photoCount">可一次選多張，照片只留在這台裝置</span>
+          <span class="small muted" id="photoCount">可一次選多張</span>
         </div>
+        <div class="row-actions" id="aiBar" hidden>
+          <button type="button" id="aiAll" class="primary">自動辨識全部照片並比對</button>
+          <button type="button" id="aiOne">只辨識這張</button>
+          <button type="button" id="aiLoad" class="ghost">載入辨識結果</button>
+          <span class="small" id="aiSummary"></span>
+        </div>
+        <div class="small warn-text" id="aiHint">要自動辨識，先在下方「辨識設定」儲存金鑰；沒有金鑰也可以對照照片手動點選。</div>
         <div class="thumbs" id="thumbs" hidden></div>
         <div class="viewer" id="viewer" hidden>
           <div class="viewer-tools row-actions">
@@ -207,8 +223,23 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
             <span class="small muted" id="photoName"></span>
           </div>
           <div class="stage" id="stage"><img id="photoImg" alt="紙本服務紀錄表照片"></div>
-          <div class="small muted">對照照片，在下方表單格子照著點；拖曳或捲動可移動照片，手機可雙指放大。</div>
+          <div class="small muted">拖曳或捲動可移動照片，手機可雙指放大。</div>
         </div>
+        <details class="keybox" id="keybox">
+          <summary>辨識設定（Gemini 金鑰，只存在這台裝置）</summary>
+          <div class="quick-grid">
+            <div class="small muted">金鑰只會存在這個瀏覽器，不會寫進網站、不會傳到別處；每台要用的手機或電腦各存一次。按「自動辨識」時，照片（含案主姓名與簽名）會直接從這台裝置傳給 Google Gemini 辨識，請確認機構同意後再使用。</div>
+            <div class="fields">
+              <label class="f" for="keyInput">Gemini API 金鑰<input id="keyInput" type="password" autocomplete="off" placeholder="貼上金鑰後按儲存"></label>
+              <label class="f" for="modelInput">模型（一般不用改）<input id="modelInput" autocomplete="off"></label>
+            </div>
+            <div class="row-actions">
+              <button type="button" id="keySave" class="primary">儲存到這台裝置</button>
+              <button type="button" id="keyClear" class="ghost">清除金鑰</button>
+              <span class="small" id="keyStatus"></span>
+            </div>
+          </div>
+        </details>
       </div>
       <details class="quick" id="quick">
         <summary>照紙本表單點選登錄（免打字）</summary>
@@ -422,18 +453,20 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
   let confirmPending = false;
   function resetForm(n) {
     form.cols = Array.from({ length: n || 7 }, () => ({ day: '', sig: '已簽' }));
-    form.cells = {}; form.totals = {}; confirmPending = false;
+    form.cells = {}; form.totals = {}; form.unclear = null; form.weekdayBad = null; confirmPending = false;
     renderSheet();
   }
   function cellN(code, j) { return (form.cells[code] || [])[j] || 0; }
   function renderSheet() {
     const m = $('fMonth').value; const y = Number($('fYear').value) + 1911;
     const head = form.cols.map((c, j) => '<td><span class="md">' + esc(m || '?') + '/</span><input class="day" data-j="' + j + '" type="number" min="1" max="31" inputmode="numeric" value="' + esc(c.day) + '" aria-label="第 ' + (j + 1) + ' 欄日"></td>').join('');
-    const wk = form.cols.map(c => {
+    const wk = form.cols.map((c, j) => {
       const ymd = c.day && m ? LTC.normDate(y + '/' + m + '/' + c.day) : null;
-      return '<td class="wk">' + (ymd ? LTC.weekdayOf(ymd) : (c.day ? '<span class="err-text">？</span>' : '')) + '</td>';
+      const bad = form.weekdayBad && form.weekdayBad.has(j);
+      return '<td class="wk' + (bad ? ' bad' : '') + '"' + (bad && c.aiWeekday ? ' title="紙本寫星期' + esc(c.aiWeekday) + '"' : '') + '>' + (ymd ? LTC.weekdayOf(ymd) : (c.day ? '<span class="err-text">？</span>' : '')) + (bad && c.aiWeekday ? '<br><span class="small err-text">紙本' + esc(c.aiWeekday) + '</span>' : '') + '</td>';
     }).join('');
-    const sig = form.cols.map((c, j) => '<td><button type="button" class="sigbtn s' + SIG_CYCLE.indexOf(c.sig) + '" data-sig="' + j + '">' + c.sig + '</button></td>').join('');
+    const un = form.unclear || new Set();
+    const sig = form.cols.map((c, j) => '<td><button type="button" class="sigbtn s' + SIG_CYCLE.indexOf(c.sig) + (un.has('sig:' + (j + 1)) ? ' unsure' : '') + '" data-sig="' + j + '">' + c.sig + '</button></td>').join('');
     const body = LTC.FORM_ROWS.map(code => {
       const name = code === 'MISS' ? '服務未遇' : (LTC.codeName(code) || '').replace(/（.*）/, '') + (/^(GA|SC)/.test(code) ? '（另張紀錄單）' : '');
       const sum = form.cols.reduce((s, _, j) => s + cellN(code, j), 0);
@@ -441,10 +474,10 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       return '<tr><th scope="row">' + (code === 'MISS' ? '' : '<span class="mono">' + code + '</span> ') + esc(name) + '</th>' +
         form.cols.map((_, j) => {
           const n = cellN(code, j);
-          return '<td><button type="button" class="tc' + (n ? ' on' : '') + '" data-code="' + code + '" data-j="' + j + '" aria-label="' + code + ' 第 ' + (j + 1) + ' 欄 ' + n + ' 次">' + LTC.tally(n) + '</button></td>';
+          return '<td><button type="button" class="tc' + (n ? ' on' : '') + (un.has(code + ':' + (j + 1)) ? ' unsure' : '') + '" data-code="' + code + '" data-j="' + j + '" aria-label="' + code + ' 第 ' + (j + 1) + ' 欄 ' + n + ' 次">' + LTC.tally(n) + '</button></td>';
         }).join('') +
         '<td class="tot"><span class="calc' + (bad ? ' bad' : '') + '" title="逐格加總">' + (LTC.tally(sum) || '') + '</span>' +
-        '<input class="ptot' + (bad ? ' bad' : '') + '" data-code="' + code + '" type="number" min="0" inputmode="numeric" value="' + esc(t == null ? '' : t) + '" aria-label="' + code + ' 紙本合計"></td></tr>';
+        '<input class="ptot' + (bad ? ' bad' : '') + (un.has(code + ':total') ? ' unsure' : '') + '" data-code="' + code + '" type="number" min="0" inputmode="numeric" value="' + esc(t == null ? '' : t) + '" aria-label="' + code + ' 紙本合計"></td></tr>';
     }).join('');
     $('sheet').innerHTML = '<thead><tr><th scope="row">日期</th>' + head + '<th rowspan="3" class="tot">合計<br><span class="small muted">加總／紙本</span></th></tr>' +
       '<tr><th scope="row">星期</th>' + wk + '</tr><tr><th scope="row">簽名</th>' + sig + '</tr></thead><tbody>' + body + '</tbody>';
@@ -455,14 +488,15 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       const code = t.dataset.code, j = +t.dataset.j;
       const arr = form.cells[code] || (form.cells[code] = form.cols.map(() => 0));
       arr[j] = e.shiftKey ? Math.max(0, (arr[j] || 0) - 1) : ((arr[j] || 0) + 1) % 6;
+      if (form.unclear) form.unclear.delete(code + ':' + (j + 1));
       confirmPending = false; renderSheet(); return;
     }
     const s = e.target.closest('button[data-sig]');
-    if (s) { const c = form.cols[+s.dataset.sig]; c.sig = SIG_CYCLE[(SIG_CYCLE.indexOf(c.sig) + 1) % 3]; renderSheet(); }
+    if (s) { const c = form.cols[+s.dataset.sig]; c.sig = SIG_CYCLE[(SIG_CYCLE.indexOf(c.sig) + 1) % 3]; if (form.unclear) form.unclear.delete('sig:' + (+s.dataset.sig + 1)); renderSheet(); }
   });
   $('sheet').addEventListener('change', e => {
-    if (e.target.classList.contains('day')) form.cols[+e.target.dataset.j].day = e.target.value.trim();
-    else if (e.target.classList.contains('ptot')) form.totals[e.target.dataset.code] = e.target.value.trim();
+    if (e.target.classList.contains('day')) { const j = +e.target.dataset.j; form.cols[j].day = e.target.value.trim(); form.cols[j].aiWeekday = ''; if (form.weekdayBad) form.weekdayBad.delete(j); }
+    else if (e.target.classList.contains('ptot')) { form.totals[e.target.dataset.code] = e.target.value.trim(); if (form.unclear) form.unclear.delete(e.target.dataset.code + ':total'); }
     else return;
     confirmPending = false; renderSheet();
   });
@@ -490,7 +524,8 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     src.B = { rows: null, name: '' };
     clearExample();
     parseSide('B');
-    $('fMsg').innerHTML = '<span class="ok-text">已加入 ' + esc($('fClient').value) + '（' + esc($('fWorker').value) + '）' + (res.lines.length - 1) + ' 筆。下一張表請改案主或服務人員後繼續點。</span>';
+    $('fMsg').innerHTML = '<span class="ok-text">已加入 ' + esc($('fClient').value) + '（' + esc($('fWorker').value) + '）' + (res.lines.length - 1) + ' 筆。</span>';
+    if (photos[cur]) { photos[cur].state = 'added'; renderThumbs(); }
     resetForm(7);
   });
 
@@ -504,12 +539,18 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     $('quick').open = true;
     clearExample();
   }
+  const ST_LABEL = { busy: ['…', ''], added: ['✓', 'added'], review: ['⚠', 'review'], ready: ['✓', ''], error: ['✗', 'error'] };
+  function renderThumbs() {
+    $('thumbs').hidden = photos.length < 2;
+    $('thumbs').innerHTML = photos.map((p, j) => '<button type="button" data-i="' + j + '" class="' + (j === cur ? 'on' : '') + '" aria-label="第 ' + (j + 1) + ' 張"><img src="' + p.url + '" alt="">' +
+      (p.state && ST_LABEL[p.state] ? '<span class="st ' + ST_LABEL[p.state][1] + '">' + ST_LABEL[p.state][0] + '</span>' : '') + '</button>').join('');
+  }
   function showPhoto(i) {
     cur = i; zoom = 1;
     const has = photos.length > 0;
-    $('viewer').hidden = !has; $('thumbs').hidden = photos.length < 2;
-    $('photoCount').textContent = has ? '已載入 ' + photos.length + ' 張，照片只留在這台裝置' : '可一次選多張，照片只留在這台裝置';
-    $('thumbs').innerHTML = photos.map((p, j) => '<button type="button" data-i="' + j + '" class="' + (j === cur ? 'on' : '') + '" aria-label="第 ' + (j + 1) + ' 張"><img src="' + p.url + '" alt=""></button>').join('');
+    $('viewer').hidden = !has;
+    $('photoCount').textContent = has ? '已載入 ' + photos.length + ' 張' : '可一次選多張';
+    renderThumbs();
     if (!has) { $('photoImg').removeAttribute('src'); return; }
     const p = photos[cur];
     $('photoImg').src = p.url; $('photoImg').style.width = '100%';
@@ -547,6 +588,206 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     window.addEventListener('pointermove', e => { if (!down) return; st.scrollLeft = sl - (e.clientX - sx); st.scrollTop = stp - (e.clientY - sy); });
     window.addEventListener('pointerup', () => { down = false; st.classList.remove('dragging'); });
   })();
+
+  /* ---------- Gemini 自動辨識（金鑰只存在這台裝置） ---------- */
+  const KEY_STORE = 'ltc_gemini_key'; const MODEL_STORE = 'ltc_gemini_model';
+  const DEFAULT_MODEL = 'gemini-2.5-flash';
+  const MODEL_FALLBACKS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash'];
+  function getKey() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+  function getModel() { try { return localStorage.getItem(MODEL_STORE) || DEFAULT_MODEL; } catch (e) { return DEFAULT_MODEL; } }
+  function renderKeyStatus() {
+    const k = getKey();
+    $('keyStatus').innerHTML = k ? '<span class="ok-text">這台裝置已儲存金鑰（末四碼 ' + esc(k.slice(-4)) + '）</span>' : '<span class="warn-text">尚未儲存金鑰，無法自動辨識</span>';
+    $('aiBar').hidden = !k;
+    $('aiHint').hidden = !!k;
+  }
+  $('keySave').addEventListener('click', () => {
+    const k = $('keyInput').value.trim();
+    if (!k) { $('keyStatus').innerHTML = '<span class="err-text">請先貼上金鑰</span>'; return; }
+    try { localStorage.setItem(KEY_STORE, k); localStorage.setItem(MODEL_STORE, $('modelInput').value.trim() || DEFAULT_MODEL); }
+    catch (e) { $('keyStatus').innerHTML = '<span class="err-text">這個瀏覽器不允許儲存（無痕模式？），請改用一般視窗</span>'; return; }
+    $('keyInput').value = ''; renderKeyStatus();
+  });
+  $('keyClear').addEventListener('click', () => { try { localStorage.removeItem(KEY_STORE); } catch (e) { /* 無法清除 */ } renderKeyStatus(); });
+  $('modelInput').value = getModel();
+
+  // 照片縮到長邊 2000px 的 JPEG，減少傳輸量；回傳 base64（不含前綴）
+  function photoToBase64(p) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 2000; const r = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * r); c.height = Math.round(img.naturalHeight * r);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+      };
+      img.onerror = () => reject(new Error('照片無法讀取'));
+      img.src = p.url;
+    });
+  }
+
+  const CODE_ROWS = LTC.FORM_ROWS.filter(c => c !== 'MISS');
+  const PROMPT = [
+    '這是一張台灣長照「照顧服務紀錄表」(112.02 修) 的照片，請逐格辨識並只輸出 JSON。',
+    '表頭：民國年、月、服務人員、案主姓名、督導。',
+    '表格每一「欄」是一次訪視：第一列「日期」是當月的日（可能同一天出現兩欄），第二列「星期」是手寫的星期（一～日），第三列「簽名」是案主或家屬的簽名（有字跡即為 signed；寫「代簽」或明顯是另一人代簽為 proxy；空白為 unsigned；看不清楚為 unclear）。',
+    '表格每一「列」是一個服務碼（BA01～BA24、服務未遇），格子裡用正字畫記：「一」=1、「丅」=2、「下」=3、「止」=4、「正」=5，可能有「正一」=6 等；空白=0。最右欄「合計」是服務員手寫的該列總數（可能是正字或阿拉伯數字），請照紙本寫的數字填，不要自己加總。',
+    '只輸出表上實際有畫記的列；沒有畫記的列省略。columns 的順序要和表上由左到右一致，只列有日期或有畫記的欄。',
+    '任何你沒把握的格子，列在 unclear 陣列，格式「代碼:欄序(1起算)」，例如 "BA13:2"；合計欄沒把握寫「代碼:total」。',
+    '表格外的手寫附註（例如「7/20 早上 BA02 指甲 一次」）原文放進 notes。',
+  ].join('\n');
+
+  const SCHEMA = {
+    type: 'OBJECT',
+    properties: {
+      roc_year: { type: 'INTEGER' }, month: { type: 'INTEGER' },
+      worker: { type: 'STRING' }, client: { type: 'STRING' }, supervisor: { type: 'STRING' },
+      columns: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        day: { type: 'INTEGER' }, weekday: { type: 'STRING' },
+        signature: { type: 'STRING', enum: ['signed', 'proxy', 'unsigned', 'unclear'] },
+      }, required: ['day', 'signature'] } },
+      rows: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        code: { type: 'STRING' }, counts: { type: 'ARRAY', items: { type: 'INTEGER' } }, total: { type: 'INTEGER' },
+      }, required: ['code', 'counts'] } },
+      unclear: { type: 'ARRAY', items: { type: 'STRING' } },
+      notes: { type: 'STRING' },
+    },
+    required: ['roc_year', 'month', 'worker', 'client', 'columns', 'rows'],
+  };
+
+  async function callGemini(b64, model) {
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+    const body = {
+      contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: b64 } }, { text: PROMPT }] }],
+      generationConfig: { temperature: 0, response_mime_type: 'application/json', response_schema: SCHEMA },
+    };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getKey() }, body: JSON.stringify(body) });
+    if (!res.ok) {
+      let msg = res.status + ' ' + res.statusText;
+      try { const j = await res.json(); msg = (j.error && j.error.message) || msg; } catch (e) { /* 非 JSON */ }
+      const err = new Error(msg); err.status = res.status; throw err;
+    }
+    const j = await res.json();
+    const text = (((j.candidates || [])[0] || {}).content || { parts: [] }).parts.map(p => p.text || '').join('');
+    if (!text) throw new Error('模型沒有回傳內容' + (j.promptFeedback ? '（' + JSON.stringify(j.promptFeedback) + '）' : ''));
+    return JSON.parse(text);
+  }
+
+  async function recognize(p) {
+    const b64 = await photoToBase64(p);
+    const models = [getModel()].concat(MODEL_FALLBACKS.filter(m => m !== getModel()));
+    let lastErr;
+    for (const m of models) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { return await callGemini(b64, m); }
+        catch (e) {
+          lastErr = e;
+          if (e.status === 429) { await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue; }
+          if (e.status === 404 || e.status === 400 && /model/i.test(e.message)) break; // 換下一個模型
+          throw e;
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  // AI 結果 → 表單狀態 + 驗算。回傳 { issues: [], unclearCells: Set('BA13:2'), weekdayBad: Set(colIdx) }
+  function applyAiToForm(ai) {
+    const issues = [];
+    $('fYear').value = ai.roc_year || ''; $('fMonth').value = ai.month || '';
+    $('fWorker').value = (ai.worker || '').trim(); $('fClient').value = (ai.client || '').trim();
+    const cols = (ai.columns || []).map(c => ({ day: c.day ? String(c.day) : '', sig: c.signature === 'proxy' ? '家屬代簽' : c.signature === 'signed' ? '已簽' : '未簽', aiWeekday: (c.weekday || '').trim(), aiSig: c.signature }));
+    form.cols = cols.length ? cols : Array.from({ length: 7 }, () => ({ day: '', sig: '已簽' }));
+    form.cells = {}; form.totals = {};
+    (ai.rows || []).forEach(r => {
+      const code = /未遇/.test(r.code) ? 'MISS' : LTC.normCode(r.code);
+      if (!code || !LTC.FORM_ROWS.includes(code)) { issues.push('讀到不認識的列「' + r.code + '」，已忽略'); return; }
+      form.cells[code] = form.cols.map((_, j) => Math.max(0, Number(r.counts[j]) || 0));
+      if (r.total != null && r.total !== '') form.totals[code] = String(r.total);
+    });
+    const unclearCells = new Set((ai.unclear || []).map(s => {
+      const m = String(s).match(/^(.+?):(\d+|total)$/); if (!m) return s;
+      const code = /未遇/.test(m[1]) ? 'MISS' : LTC.normCode(m[1]); return code + ':' + m[2];
+    }));
+    // 星期驗算：AI 讀到的手寫星期 vs 由日期算出的星期
+    const weekdayBad = new Set();
+    const y = Number(ai.roc_year) + 1911;
+    form.cols.forEach((c, j) => {
+      if (!c.day || !ai.month) return;
+      const ymd = LTC.normDate(y + '/' + ai.month + '/' + c.day);
+      if (!ymd) { weekdayBad.add(j); issues.push('第 ' + (j + 1) + ' 欄日期 ' + ai.month + '/' + c.day + ' 不存在'); return; }
+      const w = LTC.weekdayOf(ymd);
+      if (c.aiWeekday && c.aiWeekday !== w) { weekdayBad.add(j); issues.push('第 ' + (j + 1) + ' 欄：日期 ' + ai.month + '/' + c.day + ' 應為星期' + w + '，紙本寫星期' + c.aiWeekday + '，日期或星期有一個讀錯／寫錯'); }
+      if (c.aiSig === 'unclear') { unclearCells.add('sig:' + (j + 1)); issues.push('第 ' + (j + 1) + ' 欄簽名看不清楚'); }
+    });
+    unclearCells.forEach(k => { if (!k.startsWith('sig:')) issues.push('格子 ' + k.replace(':total', ' 合計').replace(':', ' 第 ') + (k.endsWith('total') ? '' : ' 欄') + ' 辨識沒把握'); });
+    form.unclear = unclearCells; form.weekdayBad = weekdayBad;
+    if (ai.notes) issues.push('紙本附註：' + ai.notes);
+    confirmPending = false;
+    renderSheet();
+    const res = LTC.formToRows({ rocYear: Number($('fYear').value), month: Number($('fMonth').value), worker: $('fWorker').value, client: $('fClient').value, cols: form.cols, cells: form.cells, totals: form.totals });
+    return { issues: issues.concat(res.errors.map(e => '必須修正：' + e), res.warnings), errors: res.errors, lines: res.lines, clean: !issues.length && !res.errors.length && !res.warnings.length && res.lines.length > 1 };
+  }
+
+  function appendLinesToB(lines) {
+    const ta = $('textB');
+    let txt = ta.value.trim();
+    if (src.B.rows || isExample || !txt || !LTC.parseRecords(LTC.textToRows(txt), 'B').columns) txt = lines[0].join('\t');
+    ta.value = txt + '\n' + lines.slice(1).map(r => r.join('\t')).join('\n');
+    src.B = { rows: null, name: '' };
+    clearExample();
+    parseSide('B');
+  }
+
+  let aiBusy = false;
+  async function recognizeOne(i, autoAdd) {
+    const p = photos[i]; if (!p) return null;
+    showPhoto(i);
+    p.state = 'busy'; renderThumbs();
+    $('fMsg').innerHTML = '辨識中：' + esc(p.name) + '…';
+    try {
+      const ai = await recognize(p);
+      p.ai = ai;
+      const r = applyAiToForm(ai);
+      p.issues = r.issues;
+      $('quick').open = true;
+      if (r.clean && autoAdd) {
+        appendLinesToB(r.lines); p.state = 'added';
+        $('fMsg').innerHTML = '<span class="ok-text">' + esc(p.name) + '：辨識完成，合計與星期全部驗算相符，已加入紙本清單（' + (r.lines.length - 1) + ' 筆）。</span>';
+        resetForm(7);
+      } else {
+        p.state = r.errors.length ? 'error' : (r.issues.length ? 'review' : 'ready');
+        showIssues(p);
+      }
+      renderThumbs();
+      return r;
+    } catch (e) {
+      p.state = 'error'; renderThumbs();
+      $('fMsg').innerHTML = '<span class="err-text">' + esc(p.name) + ' 辨識失敗：' + esc(e.message) + '</span>' +
+        (e.status === 400 || e.status === 403 ? '<br>請確認金鑰正確、已啟用 Generative Language API，且金鑰的網址限制包含這個網站。' : '');
+      return null;
+    }
+  }
+  function showIssues(p) {
+    const issues = p.issues || [];
+    $('fMsg').innerHTML = '<b>' + esc(p.name) + '</b>：' + (issues.length ? '<span class="warn-text">請對照照片確認：<br>' + issues.map(esc).join('<br>') + '</span><br>' : '<span class="ok-text">辨識完成，驗算相符。</span>') +
+      '紅框格子是需要看的地方，修正後按「加入紙本清單」。';
+  }
+  $('aiOne').addEventListener('click', async () => { if (aiBusy || cur < 0) return; aiBusy = true; await recognizeOne(cur, false); aiBusy = false; });
+  $('aiAll').addEventListener('click', async () => {
+    if (aiBusy) return; aiBusy = true;
+    let added = 0, review = 0, failed = 0; let firstReview = -1;
+    for (let i = 0; i < photos.length; i++) {
+      if (photos[i].state === 'added') continue;
+      const r = await recognizeOne(i, true);
+      if (!r) failed++; else if (photos[i].state === 'added') added++; else { review++; if (firstReview < 0) firstReview = i; }
+    }
+    aiBusy = false;
+    if (firstReview >= 0) { showPhoto(firstReview); applyAiToForm(photos[firstReview].ai); showIssues(photos[firstReview]); }
+    $('aiSummary').innerHTML = '辨識完成：' + added + ' 張驗算相符已自動加入' + (review ? '、<span class="warn-text">' + review + ' 張需要人看</span>' : '') + (failed ? '、<span class="err-text">' + failed + ' 張失敗</span>' : '') +
+      (review ? '。點縮圖上有 ⚠ 的照片，再按「載入辨識結果」逐張確認。' : '。');
+  });
+  $('aiLoad').addEventListener('click', () => { const p = photos[cur]; if (p && p.ai) { applyAiToForm(p.ai); $('quick').open = true; showIssues(p); } else { $('fMsg').textContent = '這張還沒有辨識結果，先按「只辨識這張」。'; } });
 
   function fillDatalists() {
     const p = parsed.A; const cs = new Set(), ws = new Set();
@@ -681,13 +922,14 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
   $('loadExample').addEventListener('click', loadExample);
   $('clearAll').addEventListener('click', () => {
     ['A', 'B'].forEach(s => { $('text' + s).value = ''; $('file' + s).value = ''; src[s] = { rows: null, name: '' }; parsed[s] = null; renderStatus(s); });
-    photos.forEach(p => URL.revokeObjectURL(p.url)); photos.length = 0; showPhoto(-1);
+    photos.forEach(p => URL.revokeObjectURL(p.url)); photos.length = 0; showPhoto(-1); $('aiSummary').textContent = '';
     clearExample(); result = null; $('out').hidden = true; $('resultsBox').hidden = true; fillDatalists();
   });
   $('run').addEventListener('click', () => { filter = 'attention'; run(); });
 
   const now = new Date(); $('fYear').value = now.getFullYear() - 1911; $('fMonth').value = now.getMonth() + 1;
   resetForm(7);
+  renderKeyStatus();
   loadExample();
 })();
 </script>
