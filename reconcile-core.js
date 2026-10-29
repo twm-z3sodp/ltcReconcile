@@ -19,6 +19,7 @@
     BA13: ['陪同外出', 195], BA14: ['陪同就醫', 685], BA15: ['家務協助', 195],
     BA16: ['代購或代領或代送服務', 130], BA17a: ['人工氣道管內分泌物抽吸', 75],
     BA17b: ['口腔內分泌物抽吸', 65], BA17c: ['尿管及鼻胃管之清潔與固定', 50],
+    BA17: ['協助執行輔助性醫療（紙本未分細項）', null],
     BA17d1: ['血糖機驗血糖', 50], BA17d2: ['甘油球通便', 50], BA17e: ['BA17e（以最新公告為準）', null],
     BA18: ['安全看視', 200], BA20: ['陪伴服務', 175], BA22: ['巡視服務', 130],
     BA23: ['協助洗頭', 200], BA24: ['協助排泄', 220],
@@ -215,7 +216,9 @@
       const errs = [];
       if (!date) errs.push('日期無法辨識：「' + (rawDate === '' ? '空白' : rawDate) + '」');
       if (!client) errs.push('個案姓名空白');
-      const codes = splitCodes(codeCell);
+      // 紙本表單最下列「服務未遇」：該次到府但未遇案主，以 MISS 表示
+      const missed = /未遇/.test(toHalf(codeCell));
+      const codes = missed ? [{ code: 'MISS', raw: '服務未遇', count: 1 }] : splitCodes(codeCell);
       if (!codes.length) errs.push('服務項目無法辨識：「' + (String(codeCell).trim() || '空白') + '」');
       if (errs.length) { problems.push({ src, row: rowNo, msg: errs.join('；'), raw: cells.join(' | ') }); return; }
 
@@ -286,6 +289,7 @@
    *   code_mismatch 同日同個案同服務員，系統與紙本的碼別不同（疑似填錯碼）
    *   client_mismatch 同日同服務員同碼別，個案姓名差一字（疑似寫錯字）
    *   worker_mismatch 同日同個案同碼別，服務員不同（代班或登錯人）
+   *   missed        紙本記「服務未遇」，系統當天無紀錄
    * row.sig：signed / proxy / unsigned / mixed / unknown（紙本無簽名欄） / na（無紙本）
    */
   function reconcile(aRecords, bRecords, opts) {
@@ -294,6 +298,15 @@
       aRecords = aRecords.map(r => Object.assign({}, r, { worker: '' }));
       bRecords = bRecords.map(r => Object.assign({}, r, { worker: '' }));
     }
+    // 紙本表單只有一列 BA17（未分 a～e）：紙本出現無細項的 BA17 時，系統的 BA17x 併成 BA17 比對
+    const bHasBa17Generic = bRecords.some(r => r.code === 'BA17');
+    const bHasBa17Detail = bRecords.some(r => /^BA17[a-e]/.test(r.code || ''));
+    if (bHasBa17Generic && !bHasBa17Detail) {
+      aRecords = aRecords.map(r => /^BA17[a-e]/.test(r.code)
+        ? Object.assign({}, r, { code: 'BA17', notes: r.notes.concat('系統 ' + r.code + ' 併入 BA17 與紙本比對') }) : r);
+    }
+    const misses = bRecords.filter(r => r.code === 'MISS');
+    bRecords = bRecords.filter(r => r.code !== 'MISS');
     const A = aggregate(aRecords);
     const B = aggregate(bRecords);
     const rows = [];
@@ -335,6 +348,15 @@
     aOnly.forEach(a => { if (!usedA.has(a)) rows.push(makeRow('a_only', a, null)); });
     bOnly.forEach(b => { if (!usedB.has(b)) rows.push(makeRow('b_only', null, b)); });
 
+    // 服務未遇：同日同個案同服務員已有比對列就加註；系統完全沒有這次紀錄就另列一筆
+    const visitKey = r => [r.date, r.client, r.worker].join('|');
+    const missAgg = aggregate(misses);
+    for (const m of missAgg.values()) {
+      const related = rows.filter(r => visitKey(r) === visitKey(m));
+      if (related.length) related.forEach(r => r.flags.push('紙本這天有 ' + m.count + ' 次記為「服務未遇」'));
+      else rows.push(makeRow('missed', null, m));
+    }
+
     rows.sort((x, y) => (x.date + x.client + x.worker + x.code).localeCompare(y.date + y.client + y.worker + y.code));
 
     // 月份：以 A（系統）最多的年月為對帳月，其他月份標註
@@ -344,7 +366,7 @@
     rows.forEach(r => {
       if (month && r.date.slice(0, 7) !== month) r.flags.push('非對帳月份（' + month + '）資料');
       const codes = [r.aCode, r.bCode].filter(Boolean);
-      codes.forEach(c => { if (!BA_CODES[c]) r.flags.push(c + ' 不在 BA 碼表內，請確認'); });
+      codes.forEach(c => { if (!BA_CODES[c] && c !== 'MISS') r.flags.push(c + ' 不在 BA 碼表內，請確認'); });
     });
 
     return { rows, summary: summarize(rows), month };
@@ -379,6 +401,7 @@
 
   // 系統申報金額 − 紙本支持金額；正數＝系統多報（有被追扣風險），負數＝系統少報（漏收）
   function estimateAmount(r) {
+    if (r.status === 'missed') return 0;
     const pa = r.aCode ? price(r.aCode) : 0;
     const pb = r.bCode ? price(r.bCode) : 0;
     if ((r.aCode && pa == null) || (r.bCode && pb == null)) return null;
@@ -407,6 +430,8 @@
         return '系統登 ' + nm(r.aCode) + '，紙本寫 ' + nm(r.bCode) + '。請確認實際服務內容，修正錯的一邊。';
       case 'client_mismatch':
         return '個案姓名不一致：系統「' + r.client + '」、紙本「' + r.bClient + '」，差一個字，疑似誤寫。確認後更正。';
+      case 'missed':
+        return '紙本記「服務未遇」' + r.bCount + ' 次，系統沒有這天的紀錄。依規定案家仍需繳自負額，請確認系統是否要登錄未遇。';
       case 'worker_mismatch':
         return '服務員不一致：系統「' + r.worker + '」、紙本「' + r.bWorker + '」。若為代班，系統應登實際服務者。';
     }
@@ -434,7 +459,64 @@
     return s;
   }
 
+  /* ---------- 紙本表單（112.02 修 照顧服務紀錄表）登錄 ---------- */
+
+  // 表單上由上到下的列
+  const FORM_ROWS = ['BA01', 'BA02', 'BA03', 'BA04', 'BA05', 'BA07', 'BA08', 'BA10', 'BA11', 'BA12', 'BA13', 'BA14',
+    'BA15', 'BA16', 'BA17', 'BA18', 'BA20', 'BA22', 'BA23', 'BA24', 'MISS'];
+  const TALLY = ['', '一', '丅', '下', '止', '正'];
+
+  // 正字記號：5 以內用一筆一畫的樣子，超過 5 用「正」組合
+  function tally(n) {
+    if (!(n > 0)) return '';
+    return '正'.repeat(Math.floor(n / 5)) + TALLY[n % 5];
+  }
+
+  function weekdayOf(ymd) {
+    const [y, m, d] = ymd.split('-').map(Number);
+    return '日一二三四五六'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  }
+
+  /**
+   * 把一張表單轉成紙本清冊列。
+   * sheet = { rocYear, month, worker, client, cols: [{ day, sig }], cells: { BA07: [1,0,...] }, totals: { BA07: 5 } }
+   * sig：'已簽' / '家屬代簽' / '未簽'
+   * 回傳 { lines（含表頭的 2D 陣列）, errors（必須修正）, warnings（提醒，可照樣加入） }
+   */
+  function formToRows(sheet) {
+    const errors = []; const warnings = [];
+    const y = Number(sheet.rocYear) + 1911; const m = Number(sheet.month);
+    if (!(sheet.rocYear > 0) || !(m >= 1 && m <= 12)) errors.push('表頭的年、月沒有填');
+    if (!normName(sheet.worker)) errors.push('服務人員沒有填');
+    if (!normName(sheet.client)) errors.push('案主姓名沒有填');
+    const lines = [['日期', '個案姓名', '服務員', '服務項目', '次數', '簽名']];
+    const colSum = sheet.cols.map((_, j) => FORM_ROWS.reduce((s, c) => s + ((sheet.cells[c] || [])[j] || 0), 0));
+    sheet.cols.forEach((col, j) => {
+      const label = '第 ' + (j + 1) + ' 欄';
+      const hasDay = col.day !== '' && col.day != null;
+      if (!colSum[j]) {
+        if (hasDay) warnings.push(label + '（' + m + '/' + col.day + '）有日期但沒有任何服務項目，不會加入');
+        return;
+      }
+      if (!hasDay) { errors.push(label + '有勾服務項目但沒有日期'); return; }
+      const ymd = errors.length ? null : validYmd(y, m, Number(col.day));
+      if (!ymd) { if (!errors.length) errors.push(label + '的日期 ' + m + '/' + col.day + ' 不存在'); return; }
+      FORM_ROWS.forEach(code => {
+        const n = (sheet.cells[code] || [])[j] || 0;
+        if (n > 0) lines.push([ymd.replace(/-/g, '/'), normName(sheet.client), normName(sheet.worker), code === 'MISS' ? '服務未遇' : code, n, col.sig || '未簽']);
+      });
+    });
+    FORM_ROWS.forEach(code => {
+      const t = sheet.totals && sheet.totals[code];
+      if (t === '' || t == null) return;
+      const sum = sheet.cols.reduce((s, _, j) => s + ((sheet.cells[code] || [])[j] || 0), 0);
+      if (Number(t) !== sum) warnings.push((code === 'MISS' ? '服務未遇' : code) + ' 紙本合計寫 ' + t + '，逐格加總是 ' + sum + '，請對照照片確認');
+    });
+    return { lines: errors.length ? [lines[0]] : lines, errors, warnings };
+  }
+
   return {
+    FORM_ROWS, tally, weekdayOf, formToRows,
     BA_CODES, normCode, normDate, normName, parseCount, parseSignature,
     textToRows, splitCodes, parseRecords, reconcile, codeName, price,
   };

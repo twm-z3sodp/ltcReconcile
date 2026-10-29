@@ -28,6 +28,7 @@
   --bad: #f08a83; --bad-soft: #3d1d1b; --info: #9db5f0; --info-soft: #1d2840; color-scheme: dark }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
 .wrap { max-width: 1240px; margin: 0 auto; padding-block: 24px 48px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -68,21 +69,34 @@ button.ghost { background: transparent; }
 
 details.quick { border-top: 1px solid var(--line); padding-top: 10px; }
 details.quick summary { cursor: pointer; font-weight: 500; color: var(--accent); }
-.quick-grid { display: grid; gap: 10px; margin-top: 10px; }
+.quick-grid { display: grid; gap: 10px; margin-top: 10px; min-width: 0; }
+.quick-grid > * { min-width: 0; }
+details.quick, .photo-box, .photo-box > * { min-width: 0; }
+@media (max-width: 720px) { table.sheet th[scope=row] { white-space: normal; min-width: 6.5em; max-width: 7.5em; line-height: 1.25; } }
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 label.f { display: grid; gap: 3px; font-size: .8rem; color: var(--muted); }
 input, select { font: inherit; font-size: .9rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); min-width: 0; }
-.codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
-.codes button { padding: 6px 4px; font-size: .78rem; line-height: 1.25; text-align: center; position: relative; }
-.codes button b { display: block; font-family: var(--font-mono); font-size: .85rem; }
-.codes button.on { background: var(--accent-soft); border-color: var(--accent); }
-.codes button .n { position: absolute; top: -7px; right: -6px; background: var(--accent); color: var(--accent-ink); border-radius: 999px;
-  font-family: var(--font-mono); font-size: .72rem; min-width: 20px; height: 20px; display: grid; place-items: center; padding: 0 5px; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.seg label { padding: 6px 12px; font-size: .85rem; cursor: pointer; border-right: 1px solid var(--line); }
-.seg label:last-child { border-right: 0; }
-.seg input { position: absolute; opacity: 0; pointer-events: none; }
-.seg input:checked + span { color: var(--accent); font-weight: 700; }
+.sheet-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table.sheet { min-width: 0; width: max-content; font-size: .8rem; border-collapse: collapse; }
+.sheet th, .sheet td { border: 1px solid var(--line); padding: 0; text-align: center; vertical-align: middle; position: static; background: var(--surface); }
+.sheet th[scope=row] { text-align: left; padding: 3px 6px; font-weight: 500; color: var(--ink); white-space: nowrap; position: sticky; left: 0; z-index: 1; font-size: .78rem; letter-spacing: 0; }
+.sheet thead th.tot, .sheet td.tot { padding: 2px 4px; background: var(--bg); white-space: nowrap; }
+.sheet .md { font-family: var(--font-mono); color: var(--muted); font-size: .72rem; }
+.sheet input.day { width: 2.6em; padding: 3px 2px; text-align: center; font-family: var(--font-mono); border: 0; background: transparent; }
+.sheet .wk { color: var(--muted); height: 24px; }
+.sheet button.tc { width: 46px; height: 30px; border: 0; border-radius: 0; background: transparent; font-size: 1rem; padding: 0; }
+.sheet button.tc.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.sheet button.sigbtn { width: 100%; min-width: 46px; border: 0; border-radius: 0; font-size: .74rem; padding: 6px 2px; }
+.sheet button.sigbtn.s0 { color: var(--good); }
+.sheet button.sigbtn.s1 { color: var(--info); }
+.sheet button.sigbtn.s2 { color: var(--bad); background: var(--bad-soft); }
+.sheet .calc { display: inline-block; min-width: 2.2em; color: var(--accent); font-weight: 700; }
+.sheet .calc.bad { color: var(--bad); }
+.sheet input.ptot { width: 2.8em; padding: 2px; font-size: .78rem; text-align: center; }
+.sheet input.ptot.bad { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
+.err-text { color: var(--bad); }
+.warn-text { color: var(--warn); }
+.ok-text { color: var(--good); }
 
 .run-bar { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; align-items: center; }
 
@@ -192,31 +206,28 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
             <span class="small muted" id="photoName"></span>
           </div>
           <div class="stage" id="stage"><img id="photoImg" alt="紙本服務紀錄表照片"></div>
-          <div class="small muted">對照照片，在下方「點選登錄」選日期、個案、服務員與碼別後加入；拖曳或捲動可移動照片。</div>
+          <div class="small muted">對照照片，在下方表單格子照著點；拖曳或捲動可移動照片，手機可雙指放大。</div>
         </div>
       </div>
       <details class="quick" id="quick">
-        <summary>點選登錄紙本（免打字）</summary>
+        <summary>照紙本表單點選登錄（免打字）</summary>
         <div class="quick-grid">
           <div class="fields">
-            <label class="f" for="qDate">服務日期<input type="date" id="qDate"></label>
-            <label class="f" for="qClient">個案姓名<input id="qClient" list="dlClient" autocomplete="off"></label>
-            <label class="f" for="qWorker">服務員<input id="qWorker" list="dlWorker" autocomplete="off"></label>
+            <label class="f" for="fYear">年（民國）<input type="number" id="fYear" min="100" max="200" inputmode="numeric"></label>
+            <label class="f" for="fMonth">月<input type="number" id="fMonth" min="1" max="12" inputmode="numeric"></label>
+            <label class="f" for="fWorker">服務人員<input id="fWorker" list="dlWorker" autocomplete="off"></label>
+            <label class="f" for="fClient">案主姓名<input id="fClient" list="dlClient" autocomplete="off"></label>
           </div>
           <datalist id="dlClient"></datalist><datalist id="dlWorker"></datalist>
-          <div class="small muted">點碼別加 1 次，按住 Shift 點一下減 1 次</div>
-          <div class="codes" id="qCodes"></div>
+          <div class="small muted">每一欄是一次訪視（同一天兩次就填兩欄）。點格子加一畫：一 → 丅 → 下 → 止 → 正，再點一次歸零；按住 Shift 點是減一畫。簽名格點一下切換 已簽／家屬代簽／未簽。右邊「紙本合計」照表上寫的數字填，會自動和逐格加總比對。</div>
+          <div class="sheet-wrap"><table class="sheet" id="sheet"></table></div>
           <div class="row-actions">
-            <div class="seg" role="radiogroup" aria-label="案主簽名">
-              <label><input type="radio" name="qSig" id="qSig1" value="已簽" checked><span>已簽</span></label>
-              <label><input type="radio" name="qSig" id="qSig2" value="家屬代簽"><span>家屬代簽</span></label>
-              <label><input type="radio" name="qSig" id="qSig3" value="未簽"><span>未簽</span></label>
-            </div>
-            <button id="qAdd" class="primary" type="button">加入紙本清單</button>
-            <button id="qReset" class="ghost" type="button">清除選擇</button>
-            <button id="qNextDay" class="ghost" type="button">日期 +1 天</button>
+            <button id="fAdd" class="primary" type="button">加入紙本清單</button>
+            <button id="fAddCol" type="button">多一欄</button>
+            <button id="fDelCol" type="button">少一欄</button>
+            <button id="fReset" class="ghost" type="button">清空這張表</button>
           </div>
-          <div class="small" id="qMsg"></div>
+          <div class="small" id="fMsg"></div>
         </div>
       </details>
       <div class="drop" id="dropB">
@@ -273,6 +284,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     match: ['一致', 'good'], count: ['次數不符', 'bad'], a_only: ['系統有・紙本無', 'bad'],
     b_only: ['紙本有・系統無', 'warn'], code_mismatch: ['碼別不符', 'bad'],
     client_mismatch: ['個案姓名不符', 'warn'], worker_mismatch: ['服務員不符', 'warn'],
+    missed: ['服務未遇', 'warn'],
   };
   const SIG = {
     signed: ['已簽', 'good'], proxy: ['家屬代簽', 'good'], unsigned: ['未簽', 'bad'],
@@ -400,48 +412,82 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     });
   });
 
-  /* ---------- 點選登錄 ---------- */
-  const QUICK_CODES = ['BA01', 'BA02', 'BA03', 'BA04', 'BA05', 'BA07', 'BA08', 'BA10', 'BA11', 'BA12', 'BA13', 'BA14',
-    'BA15', 'BA16', 'BA17a', 'BA17b', 'BA17c', 'BA17d1', 'BA17d2', 'BA18', 'BA20', 'BA22', 'BA23', 'BA24'];
-  const qCount = {};
-  function renderCodes() {
-    $('qCodes').innerHTML = QUICK_CODES.map(c => {
-      const n = qCount[c] || 0;
-      return '<button type="button" data-code="' + c + '" class="' + (n ? 'on' : '') + '"><b>' + c + '</b>' +
-        esc(LTC.codeName(c).replace(/（.*）/, '')) + (n ? '<span class="n">' + n + '</span>' : '') + '</button>';
-    }).join('');
+  /* ---------- 照紙本表單點選登錄 ---------- */
+  const SIG_CYCLE = ['已簽', '家屬代簽', '未簽'];
+  const form = { cols: [], cells: {}, totals: {} };
+  let confirmPending = false;
+  function resetForm(n) {
+    form.cols = Array.from({ length: n || 7 }, () => ({ day: '', sig: '已簽' }));
+    form.cells = {}; form.totals = {}; confirmPending = false;
+    renderSheet();
   }
-  $('qCodes').addEventListener('click', e => {
-    const b = e.target.closest('button[data-code]'); if (!b) return;
-    const c = b.dataset.code;
-    qCount[c] = Math.max(0, (qCount[c] || 0) + (e.shiftKey ? -1 : 1));
-    if (!qCount[c]) delete qCount[c];
-    renderCodes();
+  function cellN(code, j) { return (form.cells[code] || [])[j] || 0; }
+  function renderSheet() {
+    const m = $('fMonth').value; const y = Number($('fYear').value) + 1911;
+    const head = form.cols.map((c, j) => '<td><span class="md">' + esc(m || '?') + '/</span><input class="day" data-j="' + j + '" type="number" min="1" max="31" inputmode="numeric" value="' + esc(c.day) + '" aria-label="第 ' + (j + 1) + ' 欄日"></td>').join('');
+    const wk = form.cols.map(c => {
+      const ymd = c.day && m ? LTC.normDate(y + '/' + m + '/' + c.day) : null;
+      return '<td class="wk">' + (ymd ? LTC.weekdayOf(ymd) : (c.day ? '<span class="err-text">？</span>' : '')) + '</td>';
+    }).join('');
+    const sig = form.cols.map((c, j) => '<td><button type="button" class="sigbtn s' + SIG_CYCLE.indexOf(c.sig) + '" data-sig="' + j + '">' + c.sig + '</button></td>').join('');
+    const body = LTC.FORM_ROWS.map(code => {
+      const name = code === 'MISS' ? '服務未遇' : (LTC.codeName(code) || '').replace(/（.*）/, '');
+      const sum = form.cols.reduce((s, _, j) => s + cellN(code, j), 0);
+      const t = form.totals[code]; const bad = t !== undefined && t !== '' && Number(t) !== sum;
+      return '<tr><th scope="row">' + (code === 'MISS' ? '' : '<span class="mono">' + code + '</span> ') + esc(name) + '</th>' +
+        form.cols.map((_, j) => {
+          const n = cellN(code, j);
+          return '<td><button type="button" class="tc' + (n ? ' on' : '') + '" data-code="' + code + '" data-j="' + j + '" aria-label="' + code + ' 第 ' + (j + 1) + ' 欄 ' + n + ' 次">' + LTC.tally(n) + '</button></td>';
+        }).join('') +
+        '<td class="tot"><span class="calc' + (bad ? ' bad' : '') + '" title="逐格加總">' + (LTC.tally(sum) || '') + '</span>' +
+        '<input class="ptot' + (bad ? ' bad' : '') + '" data-code="' + code + '" type="number" min="0" inputmode="numeric" value="' + esc(t == null ? '' : t) + '" aria-label="' + code + ' 紙本合計"></td></tr>';
+    }).join('');
+    $('sheet').innerHTML = '<thead><tr><th scope="row">日期</th>' + head + '<th rowspan="3" class="tot">合計<br><span class="small muted">加總／紙本</span></th></tr>' +
+      '<tr><th scope="row">星期</th>' + wk + '</tr><tr><th scope="row">簽名</th>' + sig + '</tr></thead><tbody>' + body + '</tbody>';
+  }
+  $('sheet').addEventListener('click', e => {
+    const t = e.target.closest('button.tc');
+    if (t) {
+      const code = t.dataset.code, j = +t.dataset.j;
+      const arr = form.cells[code] || (form.cells[code] = form.cols.map(() => 0));
+      arr[j] = e.shiftKey ? Math.max(0, (arr[j] || 0) - 1) : ((arr[j] || 0) + 1) % 6;
+      confirmPending = false; renderSheet(); return;
+    }
+    const s = e.target.closest('button[data-sig]');
+    if (s) { const c = form.cols[+s.dataset.sig]; c.sig = SIG_CYCLE[(SIG_CYCLE.indexOf(c.sig) + 1) % 3]; renderSheet(); }
   });
-  $('qReset').addEventListener('click', () => { Object.keys(qCount).forEach(k => delete qCount[k]); renderCodes(); $('qMsg').textContent = ''; });
-  $('qAdd').addEventListener('click', () => {
-    const d = $('qDate').value, cl = $('qClient').value.trim(), wk = $('qWorker').value.trim();
-    const codes = Object.keys(qCount);
-    const miss = [];
-    if (!d) miss.push('日期'); if (!cl) miss.push('個案'); if (!wk) miss.push('服務員'); if (!codes.length) miss.push('至少一個碼別');
-    if (miss.length) { $('qMsg').innerHTML = '<span style="color:var(--bad)">請先填：' + miss.join('、') + '</span>'; return; }
-    const sig = document.querySelector('input[name=qSig]:checked').value;
+  $('sheet').addEventListener('change', e => {
+    if (e.target.classList.contains('day')) form.cols[+e.target.dataset.j].day = e.target.value.trim();
+    else if (e.target.classList.contains('ptot')) form.totals[e.target.dataset.code] = e.target.value.trim();
+    else return;
+    confirmPending = false; renderSheet();
+  });
+  ['fYear', 'fMonth'].forEach(id => $(id).addEventListener('change', renderSheet));
+  $('fAddCol').addEventListener('click', () => { form.cols.push({ day: '', sig: '已簽' }); Object.values(form.cells).forEach(a => a.push(0)); renderSheet(); });
+  $('fDelCol').addEventListener('click', () => {
+    const j = form.cols.length - 1; if (j < 1) return;
+    if (LTC.FORM_ROWS.some(c => cellN(c, j))) { $('fMsg').innerHTML = '<span class="err-text">最後一欄還有畫記，先清掉再減欄</span>'; return; }
+    form.cols.pop(); Object.values(form.cells).forEach(a => a.pop()); renderSheet();
+  });
+  $('fReset').addEventListener('click', () => { resetForm(form.cols.length); $('fMsg').textContent = ''; });
+  $('fAdd').addEventListener('click', () => {
+    const res = LTC.formToRows({ rocYear: Number($('fYear').value), month: Number($('fMonth').value), worker: $('fWorker').value, client: $('fClient').value, cols: form.cols, cells: form.cells, totals: form.totals });
+    if (res.errors.length) { $('fMsg').innerHTML = '<span class="err-text">請先修正：' + res.errors.map(esc).join('；') + '</span>'; return; }
+    if (res.lines.length < 2) { $('fMsg').innerHTML = '<span class="err-text">這張表還沒有任何畫記</span>'; return; }
+    if (res.warnings.length && !confirmPending) {
+      confirmPending = true;
+      $('fMsg').innerHTML = '<span class="warn-text">' + res.warnings.map(esc).join('<br>') + '</span><br>確認無誤再按一次「加入紙本清單」。';
+      return;
+    }
     const ta = $('textB');
-    const header = '日期\t個案姓名\t服務員\t服務項目\t次數\t簽名';
     let txt = ta.value.trim();
-    if (src.B.rows || !txt || !LTC.parseRecords(LTC.textToRows(txt), 'B').columns) txt = header;
-    const lines = codes.map(c => [d.replace(/-/g, '/'), cl, wk, c, qCount[c], sig].join('\t'));
-    ta.value = txt + '\n' + lines.join('\n');
+    if (src.B.rows || isExample || !txt || !LTC.parseRecords(LTC.textToRows(txt), 'B').columns) txt = res.lines[0].join('\t');
+    ta.value = txt + '\n' + res.lines.slice(1).map(r => r.join('\t')).join('\n');
     src.B = { rows: null, name: '' };
     clearExample();
     parseSide('B');
-    $('qMsg').innerHTML = '<span style="color:var(--good)">已加入 ' + cl + ' ' + d + ' 共 ' + codes.length + ' 個碼別</span>';
-    Object.keys(qCount).forEach(k => delete qCount[k]); renderCodes();
-  });
-  $('qNextDay').addEventListener('click', () => {
-    const v = $('qDate').value; if (!v) return;
-    const d = new Date(v + 'T00:00:00'); d.setDate(d.getDate() + 1);
-    $('qDate').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    $('fMsg').innerHTML = '<span class="ok-text">已加入 ' + esc($('fClient').value) + '（' + esc($('fWorker').value) + '）' + (res.lines.length - 1) + ' 筆。下一張表請改案主或服務人員後繼續點。</span>';
+    resetForm(7);
   });
 
   /* ---------- 紙本照片（只在本機以 object URL 顯示，不上傳） ---------- */
@@ -624,7 +670,6 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     $('textA').value = EX_A; $('textB').value = EX_B;
     src.A = { rows: null, name: '' }; src.B = { rows: null, name: '' };
     isExample = true; $('exampleNote').hidden = false;
-    $('qDate').value = '2026-10-26';
     filter = 'attention'; run();
   }
   $('loadExample').addEventListener('click', loadExample);
@@ -635,7 +680,8 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
   });
   $('run').addEventListener('click', () => { filter = 'attention'; run(); });
 
-  renderCodes();
+  const now = new Date(); $('fYear').value = now.getFullYear() - 1911; $('fMonth').value = now.getMonth() + 1;
+  resetForm(7);
   loadExample();
 })();
 </script>
