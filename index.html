@@ -65,6 +65,7 @@ button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid v
 button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; padding: 10px 22px; }
 button.ghost { background: transparent; }
+.scope { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
 details.quick { border-top: 1px solid var(--line); padding-top: 10px; }
@@ -175,12 +176,12 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
 
   <section class="inputs">
     <div class="panel" id="panelA">
-      <div class="panel-head"><span class="tag">A</span><h2>巨安系統服務紀錄清冊</h2><span class="hint">核銷作業 › 服務紀錄清冊 匯出</span></div>
+      <div class="panel-head"><span class="tag">A</span><h2>巨安系統服務紀錄清冊</h2><span class="hint">「居家服務明細」.xls 直接上傳</span></div>
       <div class="drop" id="dropA">
         <input type="file" id="fileA" accept=".xlsx,.xls,.csv">
         <span>或把 Excel／CSV 拖曳到這裡</span>
       </div>
-      <label class="small muted" for="textA">或貼上表格（需含表頭：日期、個案姓名、服務員、服務項目、次數）</label>
+      <label class="small muted" for="textA">或貼上表格（需含表頭：服務日期、服務個案、服務人員、服務代碼、使用服務數量）</label>
       <textarea id="textA" spellcheck="false"></textarea>
       <div class="parse-status" id="statusA"></div>
     </div>
@@ -245,6 +246,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     <button class="primary" id="run" type="button">開始對帳</button>
     <button id="loadExample" type="button">載入範例</button>
     <button id="clearAll" class="ghost" type="button">清空</button>
+    <label class="small scope"><input type="checkbox" id="scopeB" checked> 只比對紙本上有的個案（其他個案的系統紀錄不列為「紙本無」）</label>
   </div>
 
   <section id="out" hidden>
@@ -345,6 +347,8 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       if (side === 'B' && !p.hasSig) miss.push('簽名（不檢查簽名）');
       if (miss.length) h += '<span class="muted">沒有欄位：' + miss.join('、') + '</span>';
     }
+    const sk = Object.entries(p.skipped || {});
+    if (sk.length) h += '<span class="muted">已略過非居家照顧組合（不在紙本表上）：' + sk.map(([c, n]) => esc(c) + ' ' + n + ' 列').join('、') + '</span>';
     if (p.problems.length) {
       h += '<span class="err">' + p.problems.length + ' 列無法使用，未納入比對：</span><ul>' +
         p.problems.slice(0, 8).map(x => '<li>' + (x.row ? '第 ' + x.row + ' 列：' : '') + esc(x.msg) + '</li>').join('') +
@@ -562,7 +566,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       return;
     }
     const ignoreWorker = a.columns.worker == null || b.columns.worker == null;
-    result = LTC.reconcile(a.records, b.records, { ignoreWorker });
+    result = LTC.reconcile(a.records, b.records, { ignoreWorker, scopeToB: $('scopeB').checked });
     result.problemCount = a.problems.length + b.problems.length;
     renderSummary(); renderChips(); renderTable();
   }
@@ -579,7 +583,8 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       tile('完全一致', s.ok, 'good', s.total ? '佔 ' + Math.round(s.ok / s.total * 100) + '%' : ''),
       tile('系統多報（估）', money(s.overClaim), 'info', '核銷可能被追扣'),
       tile('系統少報（估）', money(s.underClaim), 'info', s.amountUnknown ? s.amountUnknown + ' 筆碼別無價格未計' : '該申報未申報'),
-    ].join('') + (result.problemCount ? '<div class="note example-note">有 ' + result.problemCount + ' 列格式有誤、未納入比對，請看上方 A／B 欄下的說明修正後重新對帳。</div>' : '');
+    ].join('') + (result.scopeExcluded ? '<div class="note small muted">系統清冊另有 ' + result.scopeExcluded.toLocaleString('zh-TW') + ' 筆屬於紙本沒有登錄的個案或月份，這次不比對。要全部比對，取消勾選「只比對紙本上有的個案」。</div>' : '') +
+      (result.problemCount ? '<div class="note example-note">有 ' + result.problemCount + ' 列格式有誤、未納入比對，請看上方 A／B 欄下的說明修正後重新對帳。</div>' : '');
   }
   function tile(k, v, cls, d) {
     return '<div class="tile ' + cls + '"><span class="k">' + k + '</span><span class="v">' + v + '</span><span class="d">' + esc(d) + '</span></div>';
@@ -610,6 +615,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
 
   function codeCell(code) {
     if (!code) return '<span class="muted">—</span>';
+    if (code === 'MISS') return '<span>服務未遇</span>';
     const n = LTC.codeName(code);
     return '<span class="mono">' + esc(code) + '</span>' + (n ? '<br><span class="small muted">' + esc(n) + '</span>' : '');
   }

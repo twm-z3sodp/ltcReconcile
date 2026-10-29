@@ -23,6 +23,7 @@
     BA17d1: ['血糖機驗血糖', 50], BA17d2: ['甘油球通便', 50], BA17e: ['BA17e（以最新公告為準）', null],
     BA18: ['安全看視', 200], BA20: ['陪伴服務', 175], BA22: ['巡視服務', 130],
     BA23: ['協助洗頭', 200], BA24: ['協助排泄', 220],
+    MISS: ['服務未遇', 0],
   };
 
   /* ---------- 正規化 ---------- */
@@ -110,23 +111,38 @@
 
   const HEADER_SYNONYMS = {
     date: ['服務日期', '日期', '服務日', '執行日期'],
-    client: ['個案姓名', '個案', '案主姓名', '案主', '個案名稱', '姓名'],
+    client: ['服務個案', '個案姓名', '個案', '案主姓名', '案主', '個案名稱', '姓名'],
     worker: ['服務員', '服務人員', '照服員', '居服員', '照顧服務員', '服務員姓名'],
-    code: ['服務項目', '碼別', '服務代碼', '項目代碼', '照顧組合', '組合代碼', '項目'],
-    count: ['次數', '數量', '單位', '服務次數', '組數'],
+    // 巨安清冊的「服務項目」是類別（居家服務／喘息服務），碼別在「服務代碼」，所以代碼欄優先
+    code: ['服務代碼', '碼別', '項目代碼', '組合代碼', '照顧組合', '服務項目', '項目'],
+    count: ['使用服務數量', '次數', '數量', '單位', '服務次數', '組數'],
     sig: ['簽名', '案主簽名', '簽章', '個案簽名', '案家簽名', '簽收'],
   };
 
+  // 回傳 { key, rank }；rank 越小越優先（完全相符優先於包含，同義字越前面越優先）
   function matchHeader(cell) {
     const t = normName(cell);
     if (!t) return null;
     for (const key of Object.keys(HEADER_SYNONYMS)) {
-      if (HEADER_SYNONYMS[key].some(w => t === w)) return key;
+      const i = HEADER_SYNONYMS[key].indexOf(t);
+      if (i >= 0) return { key, rank: i };
     }
     for (const key of Object.keys(HEADER_SYNONYMS)) {
-      if (HEADER_SYNONYMS[key].some(w => w.length >= 2 && t.includes(w))) return key;
+      const i = HEADER_SYNONYMS[key].findIndex(w => w.length >= 2 && t.includes(w));
+      if (i >= 0) return { key, rank: 100 + i };
     }
     return null;
+  }
+
+  function headerMap(row) {
+    const best = {};
+    row.forEach((cell, j) => {
+      const m = matchHeader(cell);
+      if (m && (!best[m.key] || m.rank < best[m.key].rank)) best[m.key] = { col: j, rank: m.rank };
+    });
+    const map = {};
+    Object.keys(best).forEach(k => { map[k] = best[k].col; });
+    return map;
   }
 
   // 純文字 → 2D 陣列。有 tab 用 tab；有逗號（CSV）用逗號；否則以空白切，多出的欄位併入最後一欄
@@ -183,13 +199,12 @@
     const problems = [];
     let headerIdx = -1; let colMap = null;
     for (let i = 0; i < Math.min(rows.length, 15); i++) {
-      const map = {};
-      rows[i].forEach((cell, j) => { const k = matchHeader(cell); if (k && map[k] == null) map[k] = j; });
+      const map = headerMap(rows[i]);
       const found = ['date', 'client', 'code'].filter(k => map[k] != null).length;
       if (found === 3) { headerIdx = i; colMap = map; break; }
     }
     if (headerIdx < 0) {
-      return { records: [], problems: [{ src, row: 0, msg: '找不到表頭：至少需要「日期」「個案姓名」「服務項目／碼別」三欄' }], columns: null, hasSig: false };
+      return { records: [], problems: [{ src, row: 0, msg: '找不到表頭：至少需要「日期」「個案姓名」「服務代碼／碼別」三欄' }], columns: null, hasSig: false, skipped: {} };
     }
     const hasSig = colMap.sig != null;
     const body = rows.slice(headerIdx + 1);
@@ -204,6 +219,7 @@
     }
 
     const records = [];
+    const skipped = {};
     body.forEach((r, i) => {
       const rowNo = headerIdx + i + 2; // 對應試算表列號（1 起算、含表頭）
       const cells = r.map(c => (c == null ? '' : c));
@@ -219,6 +235,9 @@
       // 紙本表單最下列「服務未遇」：該次到府但未遇案主，以 MISS 表示
       const missed = /未遇/.test(toHalf(codeCell));
       const codes = missed ? [{ code: 'MISS', raw: '服務未遇', count: 1 }] : splitCodes(codeCell);
+      // GA（喘息）、SC（短照）、AA（加成）等非 BA 碼不在居家紙本表上：略過並計數，不當成錯誤
+      const other = toHalf(codeCell).trim().toUpperCase().match(/^(GA|SC|AA|CA|CB|CC|CD|DA|EA|EB|EC|ED|EE|EF|EG|EH|FA)\d{2}/);
+      if (!codes.length && other) { const k = toHalf(codeCell).trim().toUpperCase(); skipped[k] = (skipped[k] || 0) + 1; return; }
       if (!codes.length) errs.push('服務項目無法辨識：「' + (String(codeCell).trim() || '空白') + '」');
       if (errs.length) { problems.push({ src, row: rowNo, msg: errs.join('；'), raw: cells.join(' | ') }); return; }
 
@@ -236,7 +255,7 @@
         });
       });
     });
-    return { records, problems, columns: colMap, hasSig };
+    return { records, problems, columns: colMap, hasSig, skipped };
   }
 
   /* ---------- 比對 ---------- */
@@ -305,8 +324,21 @@
       aRecords = aRecords.map(r => /^BA17[a-e]/.test(r.code)
         ? Object.assign({}, r, { code: 'BA17', notes: r.notes.concat('系統 ' + r.code + ' 併入 BA17 與紙本比對') }) : r);
     }
-    const misses = bRecords.filter(r => r.code === 'MISS');
-    bRecords = bRecords.filter(r => r.code !== 'MISS');
+    // 只比對有登錄紙本的個案與月份：居督通常只登錄部分紙本，其餘個案不該被判成「系統有、紙本無」
+    // 個案名差一字（疑似誤寫）也納入，才能判出姓名不符
+    let scopeExcluded = 0;
+    if (opts && opts.scopeToB) {
+      const bClients = [...new Set(bRecords.map(r => r.client))];
+      const bMonths = new Set(bRecords.map(r => r.date.slice(0, 7)));
+      const near = new Map();
+      const inScope = c => {
+        if (!near.has(c)) near.set(c, bClients.some(b => b === c || (b.length === c.length && levenshtein(b, c) === 1)));
+        return near.get(c);
+      };
+      const kept = aRecords.filter(r => bMonths.has(r.date.slice(0, 7)) && inScope(r.client));
+      scopeExcluded = aRecords.length - kept.length;
+      aRecords = kept;
+    }
     const A = aggregate(aRecords);
     const B = aggregate(bRecords);
     const rows = [];
@@ -348,14 +380,18 @@
     aOnly.forEach(a => { if (!usedA.has(a)) rows.push(makeRow('a_only', a, null)); });
     bOnly.forEach(b => { if (!usedB.has(b)) rows.push(makeRow('b_only', null, b)); });
 
-    // 服務未遇：同日同個案同服務員已有比對列就加註；系統完全沒有這次紀錄就另列一筆
+    // 服務未遇（MISS）和一般碼一樣比對；紙本有、系統無的未遇另標 missed，同一天的其他列加註
     const visitKey = r => [r.date, r.client, r.worker].join('|');
-    const missAgg = aggregate(misses);
-    for (const m of missAgg.values()) {
-      const related = rows.filter(r => visitKey(r) === visitKey(m));
-      if (related.length) related.forEach(r => r.flags.push('紙本這天有 ' + m.count + ' 次記為「服務未遇」'));
-      else rows.push(makeRow('missed', null, m));
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].status === 'b_only' && rows[i].bCode === 'MISS') {
+        const old = rows[i];
+        rows[i] = makeRow('missed', null, B.get([old.date, old.bClient, old.bWorker, 'MISS'].join('|')));
+      }
     }
+    const missDays = new Set(rows.filter(r => r.bCode === 'MISS').map(r => [r.date, r.bClient, r.bWorker].join('|')));
+    rows.forEach(r => {
+      if (r.bCode !== 'MISS' && missDays.has(visitKey(r))) r.flags.push('紙本這天另有「服務未遇」紀錄');
+    });
 
     rows.sort((x, y) => (x.date + x.client + x.worker + x.code).localeCompare(y.date + y.client + y.worker + y.code));
 
@@ -369,7 +405,7 @@
       codes.forEach(c => { if (!BA_CODES[c] && c !== 'MISS') r.flags.push(c + ' 不在 BA 碼表內，請確認'); });
     });
 
-    return { rows, summary: summarize(rows), month };
+    return { rows, summary: summarize(rows), month, scopeExcluded };
   }
 
   function push(map, k, v) { if (!map.has(k)) map.set(k, []); map.get(k).push(v); }
@@ -409,7 +445,7 @@
   }
 
   function advise(r) {
-    const nm = c => c + (codeName(c) ? ' ' + codeName(c) : '');
+    const nm = c => c === 'MISS' ? '服務未遇' : c + (codeName(c) ? ' ' + codeName(c) : '');
     switch (r.status) {
       case 'match':
         if (r.sig === 'unsigned') return '項目次數一致，但紙本未簽名。請服務員補請案主或家屬簽名後再申報。';
