@@ -127,6 +127,22 @@ tr.s-good td:first-child { box-shadow: inset 4px 0 0 var(--good); }
 .example-note { font-size: .8rem; background: var(--warn-soft); color: var(--warn); padding: 6px 12px; border-radius: 8px; }
 .toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
   background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: .88rem; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+label.btn { display: inline-block; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 14px; font-size: .92rem; }
+label.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+label.btn:hover { border-color: var(--accent); }
+input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.photo-box { display: grid; gap: 10px; padding: 12px; border-radius: 8px; background: var(--accent-soft); }
+.thumbs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.thumbs button { padding: 0; width: 64px; height: 64px; flex: 0 0 auto; overflow: hidden; border-width: 2px; background: var(--surface); }
+.thumbs button.on { border-color: var(--accent); }
+.thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.viewer { display: grid; gap: 8px; min-width: 0; }
+.viewer-tools button { padding: 5px 10px; font-size: .85rem; }
+.stage { max-height: 70vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); cursor: grab; touch-action: pan-x pan-y pinch-zoom; }
+@media (max-width: 720px) { .stage { max-height: 45vh; } }
+.stage.dragging { cursor: grabbing; }
+.stage img { display: block; width: 100%; max-width: none; user-select: none; -webkit-user-drag: none; }
 @media (prefers-reduced-motion: no-preference) { .tile, tr { transition: background-color .15s; } }
 </style>
 </head>
@@ -157,14 +173,28 @@ tr.s-good td:first-child { box-shadow: inset 4px 0 0 var(--good); }
 
     <div class="panel" id="panelB">
       <div class="panel-head"><span class="tag">B</span><h2>服務員繳回紙本紀錄表</h2><span class="hint">112.02 修 官方表單</span></div>
-      <div class="drop" id="dropB">
-        <input type="file" id="fileB" accept=".xlsx,.xls,.csv">
-        <span>或把 Excel／CSV 拖曳到這裡</span>
+      <div class="photo-box" id="photoBox">
+        <div class="row-actions">
+          <label class="btn primary" for="photoCam">拍照</label>
+          <input type="file" id="photoCam" accept="image/*" capture="environment" class="visually-hidden">
+          <label class="btn" for="photoPick">從電腦／相簿選照片</label>
+          <input type="file" id="photoPick" accept="image/*" multiple class="visually-hidden">
+          <span class="small muted" id="photoCount">可一次選多張，照片只留在這台裝置</span>
+        </div>
+        <div class="thumbs" id="thumbs" hidden></div>
+        <div class="viewer" id="viewer" hidden>
+          <div class="viewer-tools row-actions">
+            <button type="button" id="zoomOut" aria-label="縮小">－</button>
+            <button type="button" id="zoomFit">符合寬度</button>
+            <button type="button" id="zoomIn" aria-label="放大">＋</button>
+            <button type="button" id="rotate">旋轉 90°</button>
+            <button type="button" id="photoRemove" class="ghost">移除這張</button>
+            <span class="small muted" id="photoName"></span>
+          </div>
+          <div class="stage" id="stage"><img id="photoImg" alt="紙本服務紀錄表照片"></div>
+          <div class="small muted">對照照片，在下方「點選登錄」選日期、個案、服務員與碼別後加入；拖曳或捲動可移動照片。</div>
+        </div>
       </div>
-      <label class="small muted" for="textB">或貼上表格（表頭多一欄「簽名」：已簽／未簽／家屬代簽）</label>
-      <textarea id="textB" spellcheck="false"></textarea>
-      <div class="parse-status" id="statusB"></div>
-
       <details class="quick" id="quick">
         <summary>點選登錄紙本（免打字）</summary>
         <div class="quick-grid">
@@ -184,10 +214,19 @@ tr.s-good td:first-child { box-shadow: inset 4px 0 0 var(--good); }
             </div>
             <button id="qAdd" class="primary" type="button">加入紙本清單</button>
             <button id="qReset" class="ghost" type="button">清除選擇</button>
+            <button id="qNextDay" class="ghost" type="button">日期 +1 天</button>
           </div>
           <div class="small" id="qMsg"></div>
         </div>
       </details>
+      <div class="drop" id="dropB">
+        <input type="file" id="fileB" accept=".xlsx,.xls,.csv">
+        <span>或把 Excel／CSV 拖曳到這裡</span>
+      </div>
+      <label class="small muted" for="textB">或貼上表格（表頭多一欄「簽名」：已簽／未簽／家屬代簽）</label>
+      <textarea id="textB" spellcheck="false"></textarea>
+      <div class="parse-status" id="statusB"></div>
+
     </div>
   </section>
 
@@ -399,6 +438,66 @@ tr.s-good td:first-child { box-shadow: inset 4px 0 0 var(--good); }
     $('qMsg').innerHTML = '<span style="color:var(--good)">已加入 ' + cl + ' ' + d + ' 共 ' + codes.length + ' 個碼別</span>';
     Object.keys(qCount).forEach(k => delete qCount[k]); renderCodes();
   });
+  $('qNextDay').addEventListener('click', () => {
+    const v = $('qDate').value; if (!v) return;
+    const d = new Date(v + 'T00:00:00'); d.setDate(d.getDate() + 1);
+    $('qDate').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  });
+
+  /* ---------- 紙本照片（只在本機以 object URL 顯示，不上傳） ---------- */
+  const photos = []; let cur = -1; let zoom = 1;
+  function addPhotos(fileList) {
+    const files = [...fileList].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.name));
+    if (!files.length) return;
+    files.forEach(f => photos.push({ name: f.name || '照片', url: URL.createObjectURL(f), heic: /heic|heif/i.test(f.type + f.name) }));
+    showPhoto(photos.length - files.length);
+    $('quick').open = true;
+    clearExample();
+  }
+  function showPhoto(i) {
+    cur = i; zoom = 1;
+    const has = photos.length > 0;
+    $('viewer').hidden = !has; $('thumbs').hidden = photos.length < 2;
+    $('photoCount').textContent = has ? '已載入 ' + photos.length + ' 張，照片只留在這台裝置' : '可一次選多張，照片只留在這台裝置';
+    $('thumbs').innerHTML = photos.map((p, j) => '<button type="button" data-i="' + j + '" class="' + (j === cur ? 'on' : '') + '" aria-label="第 ' + (j + 1) + ' 張"><img src="' + p.url + '" alt=""></button>').join('');
+    if (!has) { $('photoImg').removeAttribute('src'); return; }
+    const p = photos[cur];
+    $('photoImg').src = p.url; $('photoImg').style.width = '100%';
+    $('photoName').textContent = (cur + 1) + '／' + photos.length + '　' + p.name;
+  }
+  $('photoImg').addEventListener('error', () => {
+    const p = photos[cur]; if (!p) return;
+    $('photoName').textContent = p.heic ? '這個瀏覽器無法顯示 HEIC 照片：請用手機「拍照」按鈕，或在 iPhone 設定 › 相機 › 格式 改為「最相容」' : '照片無法顯示，請換一張';
+  });
+  $('photoCam').addEventListener('change', e => { addPhotos(e.target.files); e.target.value = ''; });
+  $('photoPick').addEventListener('change', e => { addPhotos(e.target.files); e.target.value = ''; });
+  $('photoBox').addEventListener('dragover', e => e.preventDefault());
+  $('photoBox').addEventListener('drop', e => { e.preventDefault(); addPhotos(e.dataTransfer.files); });
+  $('thumbs').addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) showPhoto(+b.dataset.i); });
+  function setZoom(z) { zoom = Math.min(5, Math.max(0.5, z)); $('photoImg').style.width = (zoom * 100) + '%'; }
+  $('zoomIn').addEventListener('click', () => setZoom(zoom * 1.4));
+  $('zoomOut').addEventListener('click', () => setZoom(zoom / 1.4));
+  $('zoomFit').addEventListener('click', () => setZoom(1));
+  $('rotate').addEventListener('click', () => {
+    const p = photos[cur]; const img = $('photoImg');
+    if (!p || !img.naturalWidth) return;
+    const c = document.createElement('canvas'); c.width = img.naturalHeight; c.height = img.naturalWidth;
+    const ctx = c.getContext('2d'); ctx.translate(c.width, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(img, 0, 0);
+    c.toBlob(b => { URL.revokeObjectURL(p.url); p.url = URL.createObjectURL(b); showPhoto(cur); }, 'image/jpeg', 0.92);
+  });
+  $('photoRemove').addEventListener('click', () => {
+    if (cur < 0) return;
+    URL.revokeObjectURL(photos[cur].url); photos.splice(cur, 1);
+    showPhoto(Math.min(cur, photos.length - 1));
+  });
+  // 滑鼠拖曳平移；觸控交給瀏覽器原生捲動與雙指縮放
+  (function () {
+    const st = $('stage'); let sx, sy, sl, stp, down = false;
+    st.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') return; down = true; sx = e.clientX; sy = e.clientY; sl = st.scrollLeft; stp = st.scrollTop; st.classList.add('dragging'); e.preventDefault(); });
+    window.addEventListener('pointermove', e => { if (!down) return; st.scrollLeft = sl - (e.clientX - sx); st.scrollTop = stp - (e.clientY - sy); });
+    window.addEventListener('pointerup', () => { down = false; st.classList.remove('dragging'); });
+  })();
+
   function fillDatalists() {
     const p = parsed.A; const cs = new Set(), ws = new Set();
     if (p) p.records.forEach(r => { cs.add(r.client); if (r.worker) ws.add(r.worker); });
@@ -531,6 +630,7 @@ tr.s-good td:first-child { box-shadow: inset 4px 0 0 var(--good); }
   $('loadExample').addEventListener('click', loadExample);
   $('clearAll').addEventListener('click', () => {
     ['A', 'B'].forEach(s => { $('text' + s).value = ''; $('file' + s).value = ''; src[s] = { rows: null, name: '' }; parsed[s] = null; renderStatus(s); });
+    photos.forEach(p => URL.revokeObjectURL(p.url)); photos.length = 0; showPhoto(-1);
     clearExample(); result = null; $('out').hidden = true; $('resultsBox').hidden = true; fillDatalists();
   });
   $('run').addEventListener('click', () => { filter = 'attention'; run(); });
