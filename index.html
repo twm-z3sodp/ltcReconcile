@@ -663,7 +663,12 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: b64 } }, { text: PROMPT }] }],
       generationConfig: { temperature: 0, response_mime_type: 'application/json', response_schema: SCHEMA },
     };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getKey() }, body: JSON.stringify(body) });
+    // 單次請求最多等 60 秒，逾時視同 503 換下一次／下一個模型
+    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), 60000);
+    let res;
+    try { res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getKey() }, body: JSON.stringify(body), signal: ac.signal }); }
+    catch (e) { clearTimeout(timer); const err = new Error(e.name === 'AbortError' ? '等待逾時（60 秒沒有回應）' : '網路錯誤：' + e.message); err.status = 503; throw err; }
+    clearTimeout(timer);
     if (!res.ok) {
       let msg = res.status + ' ' + res.statusText;
       try { const j = await res.json(); msg = (j.error && j.error.message) || msg; } catch (e) { /* 非 JSON */ }
