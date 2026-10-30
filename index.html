@@ -664,10 +664,10 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       generationConfig: { temperature: 0, response_mime_type: 'application/json', response_schema: SCHEMA },
     };
     // 單次請求最多等 60 秒，逾時視同 503 換下一次／下一個模型
-    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), 60000);
+    const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), 120000);
     let res;
     try { res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getKey() }, body: JSON.stringify(body), signal: ac.signal }); }
-    catch (e) { clearTimeout(timer); const err = new Error(e.name === 'AbortError' ? '等待逾時（60 秒沒有回應）' : '網路錯誤：' + e.message); err.status = 503; throw err; }
+    catch (e) { clearTimeout(timer); const err = new Error(e.name === 'AbortError' ? '等待逾時（120 秒沒有回應）' : '網路錯誤：' + e.message); err.status = 503; throw err; }
     clearTimeout(timer);
     if (!res.ok) {
       let msg = res.status + ' ' + res.statusText;
@@ -690,7 +690,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
         catch (e) {
           lastErr = e;
           // 429 額度／503 塞車／500：等一下再試，同模型最多 3 次後換下一個模型
-          if (e.status === 429 || e.status === 503 || e.status === 500) { $('fMsg').innerHTML = esc(p.name) + '：' + m + ' 暫時忙碌（' + e.status + '），' + (4 * (attempt + 1)) + ' 秒後重試…'; await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue; }
+          if (e.status === 429 || e.status === 503 || e.status === 500) { progress(esc(p.name) + '：' + m + ' 暫時忙碌（' + e.status + '），' + (4 * (attempt + 1)) + ' 秒後重試…'); await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue; }
           if (e.status === 404 || e.status === 400 && /model/i.test(e.message)) break; // 換下一個模型
           throw e;
         }
@@ -752,7 +752,7 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     const p = photos[i]; if (!p) return null;
     showPhoto(i);
     p.state = 'busy'; renderThumbs();
-    $('fMsg').innerHTML = '辨識中：' + esc(p.name) + '…';
+    progress('辨識中：' + esc(p.name) + '（' + (i + 1) + '／' + photos.length + '，一張約 30–60 秒）…');
     try {
       const ai = await recognize(p);
       p.ai = ai;
@@ -762,20 +762,24 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
       if (r.clean && autoAdd) {
         appendLinesToB(r.lines); p.state = 'added';
         $('fMsg').innerHTML = '<span class="ok-text">' + esc(p.name) + '：辨識完成，合計與星期全部驗算相符，已加入紙本清單（' + (r.lines.length - 1) + ' 筆）。</span>';
+        $('aiSummary').innerHTML = '<span class="ok-text">' + esc(p.name) + '：驗算相符，已加入紙本清單。</span>';
         resetForm(7);
       } else {
         p.state = r.errors.length ? 'error' : (r.issues.length ? 'review' : 'ready');
         showIssues(p);
+        $('aiSummary').innerHTML = '<span class="warn-text">' + esc(p.name) + '：辨識完成，有需要確認的格子，請看下方表單的紅框。</span>';
       }
       renderThumbs();
       return r;
     } catch (e) {
       p.state = 'error'; renderThumbs();
+      $('aiSummary').innerHTML = '<span class="err-text">' + esc(p.name) + ' 辨識失敗：' + esc(e.message) + '</span>';
       $('fMsg').innerHTML = '<span class="err-text">' + esc(p.name) + ' 辨識失敗：' + esc(e.message) + '</span>' +
         (e.status === 400 || e.status === 403 ? '<br>請確認金鑰正確、已啟用 Generative Language API，且金鑰的網址限制包含這個網站。' : '');
       return null;
     }
   }
+  function progress(html) { $('fMsg').innerHTML = html; $('aiSummary').innerHTML = '<span class="warn-text">' + html + '</span>'; }
   function showIssues(p) {
     const issues = p.issues || [];
     $('fMsg').innerHTML = '<b>' + esc(p.name) + '</b>：' + (issues.length ? '<span class="warn-text">請對照照片確認：<br>' + issues.map(esc).join('<br>') + '</span><br>' : '<span class="ok-text">辨識完成，驗算相符。</span>') +
