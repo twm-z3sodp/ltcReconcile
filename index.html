@@ -924,7 +924,16 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
     setTimeout(() => t.remove(), 2600);
   }
 
-  function clearExample() { if (isExample) { isExample = false; $('exampleNote').hidden = true; } }
+  // 離開範例狀態時，仍是範例內容的欄位一併清空，避免虛構資料混進正式比對
+  function clearExample() {
+    if (!isExample) return;
+    isExample = false; $('exampleNote').hidden = true;
+    ['A', 'B'].forEach(side => {
+      const ta = $('text' + side);
+      if (ta.value.trim() === (side === 'A' ? EX_A : EX_B).trim()) { ta.value = ''; parsed[side] = null; renderStatus(side); }
+    });
+    result = null; $('out').hidden = true; $('resultsBox').hidden = true;
+  }
   function loadExample() {
     $('textA').value = EX_A; $('textB').value = EX_B;
     src.A = { rows: null, name: '' }; src.B = { rows: null, name: '' };
