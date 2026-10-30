@@ -591,10 +591,12 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
 
   /* ---------- Gemini 自動辨識（金鑰只存在這台裝置） ---------- */
   const KEY_STORE = 'ltc_gemini_key'; const MODEL_STORE = 'ltc_gemini_model';
-  const DEFAULT_MODEL = 'gemini-2.5-flash';
-  const MODEL_FALLBACKS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.0-flash'];
+  // 2026-10-30 以金鑰實查可用模型；flash-latest 是 Google 的最新穩定版別名，塞車時依序換下一個
+  const DEFAULT_MODEL = 'gemini-flash-latest';
+  const MODEL_FALLBACKS = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+  const OLD_DEFAULTS = ['gemini-2.5-flash'];
   function getKey() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
-  function getModel() { try { return localStorage.getItem(MODEL_STORE) || DEFAULT_MODEL; } catch (e) { return DEFAULT_MODEL; } }
+  function getModel() { try { const m = localStorage.getItem(MODEL_STORE); return (!m || OLD_DEFAULTS.includes(m)) ? DEFAULT_MODEL : m; } catch (e) { return DEFAULT_MODEL; } }
   function renderKeyStatus() {
     const k = getKey();
     $('keyStatus').innerHTML = k ? '<span class="ok-text">這台裝置已儲存金鑰（末四碼 ' + esc(k.slice(-4)) + '）</span>' : '<span class="warn-text">尚未儲存金鑰，無法自動辨識</span>';
@@ -682,7 +684,8 @@ input.visually-hidden:focus-visible + label.btn, label.btn:focus-within { outlin
         try { return await callGemini(b64, m); }
         catch (e) {
           lastErr = e;
-          if (e.status === 429) { await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue; }
+          // 429 額度／503 塞車／500：等一下再試，同模型最多 3 次後換下一個模型
+          if (e.status === 429 || e.status === 503 || e.status === 500) { $('fMsg').innerHTML = esc(p.name) + '：' + m + ' 暫時忙碌（' + e.status + '），' + (4 * (attempt + 1)) + ' 秒後重試…'; await new Promise(r => setTimeout(r, 4000 * (attempt + 1))); continue; }
           if (e.status === 404 || e.status === 400 && /model/i.test(e.message)) break; // 換下一個模型
           throw e;
         }
